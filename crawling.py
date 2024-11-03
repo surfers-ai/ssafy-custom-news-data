@@ -1,4 +1,5 @@
 import json
+import random
 import time
 from hdfs import InsecureClient
 from datetime import datetime
@@ -45,7 +46,10 @@ def load_json_files_and_merge(base_directory, max_files_per_category=10):
     return all_data
 
 # 데이터 로드 및 병합 (이 부분을 크롤링으로 대체해도 좋습니다)
-data_list = load_json_files_and_merge(base_directory, 1)
+merged_data_list = load_json_files_and_merge(base_directory, 1)
+
+# 랜덤으로 데이터 추출
+data_list = random.sample(merged_data_list, 200)
 
 # 처리된 데이터 개수 출력
 print(f"총 {len(data_list)}개의 뉴스 데이터를 처리합니다.")

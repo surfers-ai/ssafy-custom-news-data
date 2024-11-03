@@ -168,3 +168,5 @@ cython_debug/
 *.zip
 # JSON 파일
 *.json
+# Parquet 파일
+*.parquet

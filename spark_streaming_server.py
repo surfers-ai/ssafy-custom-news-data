@@ -133,24 +133,31 @@ def transform_dataframe(source_df, transformation_udfs):
              .withColumn("writer", col("source_site")) \
              .drop("source_site")
 
-def load_to_target(batch_df, epoch_id):
-    # 변환된 데이터를 대상 시스템으로 적재
-    records = batch_df.toJSON().collect()
-    headers = {'Content-Type': 'application/json'}
+# def load_to_target(batch_df, epoch_id):
+#     # 변환된 데이터를 대상 시스템으로 적재
+#     records = batch_df.toJSON().collect()
+#     headers = {'Content-Type': 'application/json'}
     
-    for record in records:
-        record_dict = json.loads(record)
-        response = requests.post(
-            TARGET_ENDPOINT,
-            data=record, 
-            headers=headers
-        )
+#     for record in records:
+#         record_dict = json.loads(record)
+#         response = requests.post(
+#             TARGET_ENDPOINT,
+#             data=record, 
+#             headers=headers
+#         )
         
-        load_status = f"{'적재 성공' if response.status_code == 200 else '적재 실패'}: {record_dict['title']}"
+#         load_status = f"{'적재 성공' if response.status_code == 200 else '적재 실패'}: {record_dict['title']}"
         
-        print(load_status)
-        if response.status_code != 200:
-            print(response.text)
+#         print(load_status)
+#         if response.status_code != 200:
+#             print(response.text)
+
+def load_to_target(batch_df, epoch_id):
+    # 변환된 데이터를 대상 시스템으로 적재 (parquet 형식으로 저장)
+    batch_df = batch_df.withColumn("keywords", col("keywords").cast(StringType())) \
+                       .withColumn("embedding", col("embedding").cast(StringType()))
+    batch_df.write.mode("append").parquet("realtime.parquet")
+
 
 def start_etl_pipeline(transformed_df):
     # ETL 파이프라인 실행
