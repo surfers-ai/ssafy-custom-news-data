@@ -1,98 +1,153 @@
 import json
+from openai import OpenAI
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col
-from pyspark.sql.types import StringType, StructType, StructField
-from pyspark.streaming import StreamingContext
-import psycopg2
-from datetime import datetime
+from pyspark.sql.functions import udf, col, lit
+from pyspark.sql.types import StringType, ArrayType, FloatType, StructType, StructField
+import requests
+from dotenv import load_dotenv
 
-# PostgreSQL 연결 설정
-POSTGRESQL_HOST = "localhost"
-POSTGRESQL_PORT = "5432"
-POSTGRESQL_DB = "news_db"
-POSTGRESQL_USER = "postgres_user"
-POSTGRESQL_PASSWORD = "postgres_password"
-TABLE_NAME = "processed_news"
+load_dotenv()
 
-# Spark 세션 및 StreamingContext 설정
-spark = SparkSession.builder.appName("NewsProcessing").getOrCreate()
-sc = spark.sparkContext
-ssc = StreamingContext(sc, 5)  # 5초마다 데이터를 처리
+def create_spark_session():
+    # Spark 세션 생성
+    # 애플리케이션 이름을 "RealTimeNewsProcessing"으로 설정하고
+    # 새로운 SparkSession을 생성하거나 기존 세션을 가져옴
+    return SparkSession.builder \
+        .appName("RealTimeNewsProcessing") \
+        .getOrCreate()
 
-# HDFS 경로 설정
-hdfs_path = "hdfs://localhost:9000/user/jiwoochris"
+def get_schema():
+    return StructType([
+        StructField("title", StringType(), True),
+        StructField("source_site", StringType(), True), 
+        StructField("write_date", StringType(), True),
+        StructField("content", StringType(), True),
+        StructField("url", StringType(), True)
+    ])
 
-# PostgreSQL에 데이터 저장 함수
-def save_to_postgresql(data):
-    print("================================================")
-    print("Write to PostgreSQL")
-    print(data)
-    # try:
-    #     conn = psycopg2.connect(
-    #         host=POSTGRESQL_HOST,
-    #         port=POSTGRESQL_PORT,
-    #         dbname=POSTGRESQL_DB,
-    #         user=POSTGRESQL_USER,
-    #         password=POSTGRESQL_PASSWORD
-    #     )
-    #     cur = conn.cursor()
-    #     insert_query = f"""
-    #     INSERT INTO {TABLE_NAME} (title, content, write_date, category, embedding)
-    #     VALUES (%s, %s, %s, %s, %s)
-    #     """
-    #     cur.executemany(insert_query, data)
-    #     conn.commit()
-    #     cur.close()
-    #     conn.close()
-    #     print("Data saved to PostgreSQL.")
-    # except Exception as e:
-    #     print(f"Error saving to PostgreSQL: {e}")
+def create_streaming_df(spark, schema):
+    return spark.readStream \
+        .schema(schema) \
+        .option("cleanSource", "archive") \
+        .option("sourceArchiveDir", "hdfs://localhost:9000/realtime_archive") \
+        .json("hdfs://localhost:9000/user/jiwoochris/realtime")
 
-# 샘플 카테고리 분류 함수
-def category_classification(title, content):
-    # 간단한 키워드 기반 분류 예제
-    if "sports" in content.lower():
-        return "Sports"
-    elif "politics" in content.lower():
-        return "Politics"
-    else:
-        return "General"
+def extract_keywords(text):
+    text = truncate_content(text)
 
-# 샘플 임베딩 함수 (여기서는 단순히 문자열 길이 반환으로 예시)
-def text_embedding(content):
-    return str(len(content))
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "당신은 텍스트에서 주요 키워드를 추출하는 전문가입니다. 다음 텍스트에서 가장 중요한 5개의 키워드를 추출해주세요. 키워드는 쉼표로 구분하여 반환해주세요"},
+            {"role": "user", "content": text}
+        ],
+        max_tokens=100
+    )
+    keywords = response.choices[0].message.content.strip()
+    return keywords.split(',')
 
-# UDF로 변환
-category_udf = udf(category_classification, StringType())
-embedding_udf = udf(text_embedding, StringType())
+def get_embedding(text: str) -> list[float]:
+    text = truncate_content(text)
 
-# 스키마 정의
-schema = StructType([
-    StructField("title", StringType(), True),
-    StructField("content", StringType(), True),
-    StructField("write_date", StringType(), True)
-])
+    client = OpenAI()
+    response = client.embeddings.create(input=text, model="text-embedding-3-small")
+    return response.data[0].embedding
 
-# 스트리밍 데이터 읽기 및 처리
-def process_stream(rdd):
-    if not rdd.isEmpty():
-        df = spark.read.json(rdd, schema=schema)
+def extract_category(content):
+    content = truncate_content(content)
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "당신은 뉴스 기사의 카테고리를 분류하는 어시스턴트입니다. No verbose. 카테고리는 [\"IT_과학\", \"건강\", \"경제\", \"교육\", \"국제\", \"라이프스타일\", \"문화\", \"사건사고\", \"사회일반\", \"산업\", \"스포츠\", \"여성복지\", \"여행레저\", \"연예\", \"정치\", \"지역\", \"취미\"] 중 하나입니다. 이외의 카테고리는 없습니다."},
+            {"role": "user", "content": content}
+        ]
+    )
+    model_output = response.choices[0].message.content.strip()
+
+    # 모델 출력이 "카테고리: 건강" 형식으로 온 경우 처리
+    if "카테고리:" in model_output:
+        model_output = model_output.split("카테고리:")[1].strip()
+    # 쌍따옴표 및 따옴표 제거 및 전처리
+    model_output = model_output.replace('"', '').replace("'", "").strip()
+
+    return model_output
+
+def truncate_content(content):
+    import tiktoken
+    
+    if not content:
+        return ""
         
-        # 전처리: 카테고리 분류 및 임베딩 생성
-        df = df.withColumn("category", category_udf(col("title"), col("content")))
-        df = df.withColumn("embedding", embedding_udf(col("content")))
+    encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 사용 인코딩
+    tokens = encoding.encode(content)
+    
+    if len(tokens) > 5000:
+        truncated_tokens = tokens[:5000]
+        return encoding.decode(truncated_tokens)
+    
+    return content
 
-        # PostgreSQL에 저장할 데이터 준비
-        processed_data = df.select("title", "content", "write_date", "category", "embedding").collect()
-        rows = [(row['title'], row['content'], row['write_date'], row['category'], row['embedding']) for row in processed_data]
+def create_udfs():
+    return {
+        "keywords": udf(extract_keywords, ArrayType(StringType())),
+        "embedding": udf(get_embedding, ArrayType(FloatType())),
+        "category": udf(extract_category, StringType())
+    }
 
-        # PostgreSQL 저장
-        save_to_postgresql(rows)
+def process_dataframe(df, udfs):
+    return df.withColumn("keywords", udfs["keywords"](col("content"))) \
+             .withColumn("embedding", udfs["embedding"](col("content"))) \
+             .withColumn("category", udfs["category"](col("content"))) \
+             .withColumn("writer", col("source_site")) \
+             .drop("source_site")
 
-# HDFS 디렉터리로부터 스트리밍 데이터 생성
-lines = ssc.textFileStream(hdfs_path)
-lines.foreachRDD(lambda rdd: process_stream(rdd))
+def send_to_server(batch_df, epoch_id):
+    records = batch_df.toJSON().collect()
+    headers = {'Content-Type': 'application/json'}
+    
+    for record in records:
+        record_dict = json.loads(record)
+        response = requests.post(
+            "http://223.130.135.250:8000/write-article/",   # "http://localhost:8000/write-article/"
+            data=record, 
+            headers=headers
+        )
+        
+        log_message = f"{'Successfully' if response.status_code == 200 else 'Failed to'} sent data: " + f"{record_dict['title']}"
+        
+        print(log_message)
+        if response.status_code != 200:
+            print(response.text)
 
-# 스트리밍 시작
-ssc.start()
-ssc.awaitTermination()
+def start_streaming(processed_df):
+    query = processed_df.writeStream \
+        .foreachBatch(send_to_server) \
+        .start()
+    return query
+
+def main():
+    # Spark 세션 생성
+    spark = create_spark_session()
+    
+    # 스키마 정의
+    schema = get_schema()
+    
+    # 스트리밍 데이터프레임 생성
+    streaming_df = create_streaming_df(spark, schema)
+    
+    # UDF 함수들 생성
+    udfs = create_udfs()
+    
+    # 데이터프레임 처리 (키워드 추출, 임베딩 생성, 카테고리 분류 등)
+    processed_df = process_dataframe(streaming_df, udfs)
+    
+    # 스트리밍 시작
+    query = start_streaming(processed_df)
+    
+    # 스트리밍이 종료될 때까지 대기
+    query.awaitTermination()
+
+if __name__ == "__main__":
+    main()
