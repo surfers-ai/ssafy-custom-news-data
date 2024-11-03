@@ -94,26 +94,26 @@ nano $HADOOP_HOME/etc/hadoop/hadoop-env.sh
 export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/
 ```
 
-## 7. HDFS 데이터 디렉토리 생성
+### 1.7 HDFS 데이터 디렉토리 생성
 
 ```bash
 mkdir -p ~/hadoopdata/hdfs/namenode
 mkdir -p ~/hadoopdata/hdfs/datanode
 ```
 
-## 8. HDFS 포맷
+### 1.8 HDFS 포맷
 
 ```bash
 hdfs namenode -format
 ```
 
-## 9. HDFS 데몬 시작
+### 1.9 HDFS 데몬 시작
 
 ```bash
 start-dfs.sh
 ```
 
-### 9.1. 데몬 실행 확인
+#### 1.9.1 데몬 실행 확인
 
 ```bash
 jps
@@ -121,22 +121,22 @@ jps
 
 `NameNode`, `DataNode`, `SecondaryNameNode`가 실행 중인지 확인합니다.
 
-## 10. HDFS 사용해보기
+### 1.10 HDFS 사용해보기
 
-### 10.1. 디렉토리 생성
+#### 1.10.1 디렉토리 생성
 
 ```bash
 hdfs dfs -mkdir /user
 hdfs dfs -mkdir /user/사용자이름
 ```
 
-### 10.3. 파일 목록 확인
+#### 1.10.2 파일 목록 확인
 
 ```bash
 hdfs dfs -ls /user/사용자이름/
 ```
 
-## 11. HDFS 데몬 종료
+### 1.11 HDFS 데몬 종료
 
 ```bash
 stop-dfs.sh
@@ -172,9 +172,9 @@ source ~/.bashrc
 
 ## 3. 프로젝트 의존성 관리
 
-- Poetry를 사용하여 프로젝트 의존성을 관리합니다.
+Poetry를 사용하여 프로젝트 의존성을 관리합니다.
 
-```
+```bash
 # Poetry 설치 (필요한 경우)
 curl -sSL https://install.python-poetry.org | python3 -
 
@@ -206,99 +206,101 @@ poetry shell
 ### crawling.py
 
 - 현재는 기존 제공된 JSON 파일에서 데이터를 읽어오지만, 다음과 같은 다양한 방식으로 데이터 수집이 가능합니다:
-
   - 웹 크롤링을 통한 실시간 뉴스 수집
   - RSS 피드를 통한 뉴스 구독
   - 뉴스 API 활용 (예: 네이버/카카오 뉴스 API)
   - 외부 뉴스 데이터베이스 연동
   - 실시간 SNS 데이터 수집
 
-- **데이터 소스**
-  ```python
-  base_directory = 'training_raw_data'
-  hdfs_path = '/user/news/realtime/'
-  ```
-- **추출 프로세스**
+#### 데이터 소스
 
-  1. HDFS 디렉토리 생성 및 권한 부여
+```python
+base_directory = 'training_raw_data'
+hdfs_path = '/user/news/realtime/'
+```
 
-     ```bash
-     hdfs dfs -mkdir -p /user/news/realtime
-     hdfs dfs -chmod -R 777 /user/news/realtime
-     ```
+#### 추출 프로세스
 
-  2. JSON 파일 읽기
+1. HDFS 디렉토리 생성 및 권한 부여
 
-     - 카테고리별 디렉토리 순회
-     - 각 카테고리당 최대 10개 파일 처리
+```bash
+hdfs dfs -mkdir -p /user/news/realtime
+hdfs dfs -chmod -R 777 /user/news/realtime
+```
 
-  3. HDFS 임시 저장
-     - 1초 간격으로 데이터 전송
-     - 파일명: `news_YYYYMMDD_HHMMSS.json`
+2. JSON 파일 읽기
+
+   - 카테고리별 디렉토리 순회
+   - 각 카테고리당 최대 10개 파일 처리
+
+3. HDFS 임시 저장
+   - 1초 간격으로 데이터 전송
+   - 파일명: `news_YYYYMMDD_HHMMSS.json`
 
 ## 2. Transform (데이터 변환)
 
 ### spark_streaming_server.py
 
-- **스키마 정의**
+#### 스키마 정의
 
-  ```python
-  StructType([
-      StructField("title", StringType()),        # 뉴스 제목
-      StructField("source_site", StringType()),  # 출처
-      StructField("write_date", StringType()),   # 작성일
-      StructField("content", StringType()),      # 본문
-      StructField("url", StringType())           # 링크
-  ])
-  ```
+```python
+StructType([
+    StructField("title", StringType()),        # 뉴스 제목
+    StructField("source_site", StringType()),  # 출처
+    StructField("write_date", StringType()),   # 작성일
+    StructField("content", StringType()),      # 본문
+    StructField("url", StringType())           # 링크
+])
+```
 
-- **변환 프로세스**
+#### 변환 프로세스
 
-  1. **데이터 전처리**
+1. **데이터 전처리**
 
-     ```python
-     def preprocess_content(content):
-         # 텍스트 길이 제한 (5000 토큰)
-         # 토큰화 및 디코딩
-     ```
+```python
+def preprocess_content(content):
+    # 텍스트 길이 제한 (5000 토큰)
+    # 토큰화 및 디코딩
+```
 
-  2. **특성 추출**
+2. **특성 추출**
 
-     - 키워드 추출 (GPT-4)
-     - 텍스트 임베딩 생성
-     - 카테고리 자동 분류
+   - 키워드 추출 (GPT-4)
+   - 텍스트 임베딩 생성
+   - 카테고리 자동 분류
 
-  3. **데이터 정제**
-     - 필드명 변경 (source_site → writer)
-     - 불필요 필드 제거
-     - 누락 데이터 처리
+3. **데이터 정제**
+   - 필드명 변경 (source_site → writer)
+   - 불필요 필드 제거
+   - 누락 데이터 처리
 
 ## 3. Load (데이터 적재)
 
 ### spark_streaming_server.py
 
-- **HDFS 디렉토리 생성**
+#### HDFS 디렉토리 생성
 
-  ```bash
-  # 아카이브용 디렉토리 생성 및 권한 부여
-  hdfs dfs -mkdir -p /news_archive
-  hdfs dfs -chmod -R 777 /news_archive
-  ```
+```bash
+# 아카이브용 디렉토리 생성 및 권한 부여
+hdfs dfs -mkdir -p /news_archive
+hdfs dfs -chmod -R 777 /news_archive
+```
 
-- **데이터베이스 적재**
+#### 데이터베이스 적재
 
-  ```python
-  # 전처리된 데이터를 서버 DB에 적재
-  # TARGET_ENDPOINT는 데이터를 적재할 REST API 엔드포인트를 나타냅니다.
-  # 주의: 해당 백엔드 서버가 실행 중인 상태여야 합니다.
-  TARGET_ENDPOINT = "http://localhost:8000/write-article/"
-  ```
+```python
+# 전처리된 데이터를 서버 DB에 적재
+# TARGET_ENDPOINT는 데이터를 적재할 REST API 엔드포인트를 나타냅니다.
+# 주의: 해당 백엔드 서버가 실행 중인 상태여야 합니다.
+TARGET_ENDPOINT = "http://localhost:8000/write-article/"
+```
 
-- **적재 프로세스**
-  1. 전처리된 데이터 JSON 변환
-  2. write-article API 호출하여 DB 저장
-  3. 원본 데이터는 HDFS의 /news_archive에 보관
-  4. 적재 상태 모니터링 및 로깅
+#### 적재 프로세스
+
+1. 전처리된 데이터 JSON 변환
+2. write-article API 호출하여 DB 저장
+3. 원본 데이터는 HDFS의 /news_archive에 보관
+4. 적재 상태 모니터링 및 로깅
 
 ## 주요 기능 및 특징
 
@@ -337,34 +339,41 @@ poetry shell
 
 ### 1. 데이터 아카이브 활용
 
-- **저장 위치**: HDFS `/news_archive`
-- **데이터 특징**
-  - 원본 뉴스 데이터
-  - GPT 기반 레이블링 데이터 (키워드, 카테고리)
-  - 임베딩 벡터
-- **용도**: 자체 ML 모델 학습을 위한 학습 데이터셋 구축
+#### 저장 위치
+
+- HDFS `/news_archive`
+
+#### 데이터 특징
+
+- 원본 뉴스 데이터
+- GPT 기반 레이블링 데이터 (키워드, 카테고리)
+- 임베딩 벡터
+
+#### 용도
+
+- 자체 ML 모델 학습을 위한 학습 데이터셋 구축
 
 ### 2. Batch 학습 파이프라인
 
-- **주기적 학습 수행**
+#### 주기적 학습 수행
 
-  - 주기적으로 새로운 데이터 반영
+- 주기적으로 새로운 데이터 반영
 
-- **학습 대상 모델**
+#### 학습 대상 모델
 
-  1. 키워드 추출 모델
+1. 키워드 추출 모델
 
-     - GPT 레이블링 데이터 기반
-     - 도메인 특화 키워드 추출기 학습
+   - GPT 레이블링 데이터 기반
+   - 도메인 특화 키워드 추출기 학습
 
-  2. 임베딩 모델
+2. 임베딩 모델
 
-     - 뉴스 도메인 특화 임베딩 생성
-     - 기존 임베딩 모델 파인튜닝
+   - 뉴스 도메인 특화 임베딩 생성
+   - 기존 임베딩 모델 파인튜닝
 
-  3. 카테고리 분류 모델
-     - GPT 레이블링 기반 지도학습
-     - 뉴스 특화 분류체계 적용
+3. 카테고리 분류 모델
+   - GPT 레이블링 기반 지도학습
+   - 뉴스 특화 분류체계 적용
 
 ### 5. ETL과 ML 파이프라인 통합
 
