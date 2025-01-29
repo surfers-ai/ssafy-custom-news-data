@@ -152,7 +152,7 @@ def run_dashboard():
         
     try:
         df = load_parquet('realtime.parquet')
-        df['write_date'] = pd.to_datetime(df['write_date'])
+        df['write_date'] = pd.to_datetime(df['write_date'], format="mixed")
         
         # 메트릭 표시
         display_metrics(df)
