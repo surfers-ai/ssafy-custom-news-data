@@ -5,25 +5,6 @@ import feedparser
 # RSS 피드 URL (예: Khan 뉴스 RSS)
 RSS_FEED_URL = "https://www.khan.co.kr/rss/rssdata/total_news.xml"
 
-
-def fetch_rss_feed():
-    """
-    RSS 피드를 파싱하여 각 뉴스 항목을 출력합니다.
-    """
-    feed = feedparser.parse(RSS_FEED_URL)
-    for entry in feed.entries:
-        news_item = {
-            "title": entry.title,
-            "link": entry.link,
-            "summary": entry.summary,
-            "published": entry.published
-        }
-        print("\n=== 새로운 뉴스 항목 ===")
-        print(f"제목: {news_item['title']}")
-        print(f"링크: {news_item['link']}")
-        print(f"요약: {news_item['summary']}")
-        print(f"발행일: {news_item['published']}")
-
 def main():
     seen_links = set()
     while True:

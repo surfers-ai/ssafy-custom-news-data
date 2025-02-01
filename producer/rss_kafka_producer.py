@@ -28,7 +28,8 @@ def fetch_rss_feed():
             "title": entry.title,
             "link": entry.link,
             "summary": entry.summary,
-            "published": entry.published
+            "published": entry.updated,
+            "author": entry.author
         }
         yield news_item
 
