@@ -3,6 +3,8 @@ import time
 import json
 import feedparser
 from kafka import KafkaProducer
+import requests
+from bs4 import BeautifulSoup
 
 # RSS 피드 URL (예: Khan 뉴스 RSS)
 RSS_FEED_URL = "https://www.khan.co.kr/rss/rssdata/total_news.xml"
@@ -23,7 +25,7 @@ def fetch_rss_feed():
     """
     feed = feedparser.parse(RSS_FEED_URL)
     for entry in feed.entries:
-        # 각 항목의 필요한 정보를 추출
+        # 각 항목의 필요한 정보를 추출ㅁ
         news_item = {
             "title": entry.title,
             "link": entry.link,
@@ -33,6 +35,28 @@ def fetch_rss_feed():
         }
         yield news_item
 
+def crawl_article(url: str) -> str:
+    """특정 기사 URL을 크롤링해 기사 본문을 반환합니다."""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # 예시: 본문 확인
+        content_tag = soup.find_all("p", class_="content_text text-l")
+        content_text = "\n\n".join([tag.text.strip() for tag in content_tag])
+
+        return content_text
+
+    except requests.exceptions.RequestException as e:
+        print(f"오류 발생: {e}")
+        return ""
+
 def main():
     # 중복 전송 방지를 위해 처리한 링크를 저장하는 집합
     seen_links = set()
@@ -41,9 +65,11 @@ def main():
             for news_item in fetch_rss_feed():
                 # 뉴스 링크를 기준으로 중복 체크
                 if news_item["link"] not in seen_links:
+                    content = crawl_article(news_item["link"])
+                    news_item["content"] = content
                     seen_links.add(news_item["link"])
                     producer.send(TOPIC, news_item)
-                    print(f"Sent: {news_item['title']}")
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Sent: {news_item['title']}")
             # 60초 대기 후 다시 피드 확인
             time.sleep(60)
         except Exception as e:
