@@ -1,9 +1,11 @@
 # producer/rss_kafka_producer.py
 import time
-
+import json
+import os
 import requests
 from bs4 import BeautifulSoup
 import feedparser
+from datetime import datetime
 
 # RSS 피드 URL (예: Khan 뉴스 RSS)
 RSS_FEED_URL = "https://www.khan.co.kr/rss/rssdata/total_news.xml"
@@ -31,6 +33,25 @@ def crawl_article(url: str) -> str:
         print(f"오류 발생: {e}")
         return ""
 
+def save_article_json(article_data: dict):
+    """기사 데이터를 JSON 파일로 저장합니다."""
+    # data/raw_articles 디렉토리 생성
+    save_dir = "data/raw_articles"
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 파일명을 timestamp와 제목으로 생성
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_title = "".join(c for c in article_data['title'][:30] if c.isalnum() or c in (' ', '-', '_'))
+    filename = f"{timestamp}_{safe_title}.json"
+    
+    filepath = os.path.join(save_dir, filename)
+    
+    # JSON 파일로 저장
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(article_data, f, ensure_ascii=False, indent=2)
+    
+    print(f"기사가 저장되었습니다: {filepath}")
+
 def main():
     seen_links = set()
     while True:
@@ -47,11 +68,19 @@ def main():
 
                     content = crawl_article(entry.link)
                     print(f"기사 본문: {content}")
-                    # 파일에 제목과 본문만 저장
-                    with open('article.md', 'w', encoding='utf-8') as f:
-                        f.write(f"# {entry.title}\n\n")
-                        f.write(content)
-                    exit()
+                    
+                    # 기사 데이터 구성
+                    article_data = {
+                        "title": entry.title,
+                        "link": entry.link,
+                        "summary": entry.summary,
+                        "published": entry.updated,
+                        "author": getattr(entry, 'author', None),
+                        "content": content
+                    }
+                    
+                    # JSON 파일로 저장
+                    save_article_json(article_data)
             
             print(f"\n처리된 총 기사 수: {len(seen_links)}")
             print("60초 후에 다시 확인합니다...")

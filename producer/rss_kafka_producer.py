@@ -25,7 +25,7 @@ def fetch_rss_feed():
     """
     feed = feedparser.parse(RSS_FEED_URL)
     for entry in feed.entries:
-        # 각 항목의 필요한 정보를 추출ㅁ
+        # 각 항목의 필요한 정보를 추출
         news_item = {
             "title": entry.title,
             "link": entry.link,

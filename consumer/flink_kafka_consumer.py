@@ -1,20 +1,25 @@
 # flink_kafka_consumer.py
 
 import json
-from typing import Optional, List
+import os
+from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream.connectors import FlinkKafkaConsumer
+from pyflink.datastream.functions import MapFunction
 
 import psycopg2
 from dotenv import load_dotenv
 
 from preprocessing import transform_classify_category, transform_extract_keywords, transform_to_embedding
 
-# .env 파일에 OpenAI API key 등 필요한 설정이 있다면 로드합니다.
+# HDFS 클라이언트 관련 모듈
+from hdfs import InsecureClient
+
+# .env 파일에 필요한 설정이 있다면 로드합니다.
 load_dotenv()
 
 
@@ -48,86 +53,119 @@ def process_message(json_str: str) -> NewsArticle:
         )
 
 
-# ─────────────────────────────────────────────
-# PostgreSQL DB 연결 관련 (각 워커에서 재사용 가능하도록 단일 연결 사용)
-# ─────────────────────────────────────────────
-
-_db_conn = None
-
-def get_db_conn():
+class DBInsertionMapFunction(MapFunction):
     """
-    워커 내에서 단일 DB 연결을 생성하여 재사용합니다.
+    DB에 뉴스 기사를 저장하고 HDFS에 파일로 기록하는 함수.
+    RichMapFunction을 사용할 수 없는 경우, MapFunction과 lazy initialization을 이용합니다.
     """
-    global _db_conn
-    if _db_conn is None:
-        _db_conn = psycopg2.connect(
+    def __init__(self):
+        # lazy initialization 플래그
+        self._initialized = False
+
+    def _initialize(self):
+        """
+        DB 연결 및 HDFS 클라이언트를 초기화합니다.
+        이 메서드는 워커에서 최초 호출 시 한 번 실행됩니다.
+        """
+        # PostgreSQL DB 연결
+        self._db_conn = psycopg2.connect(
             host="localhost",
             port=5432,
             dbname="news",              # 데이터베이스 이름
             user="postgres",            # 사용자명
             password="new_password"     # 비밀번호
         )
-        _db_conn.autocommit = True
-    return _db_conn
+        self._db_conn.autocommit = True
 
+        # HDFS 클라이언트 초기화
+        self.hdfs_client = InsecureClient('http://localhost:9870', user='hadoop-user')
+        self.hdfs_path = '/user/news/realtime/'  # HDFS 내 데이터 저장 경로
 
-def db_insertion(article: NewsArticle) -> NewsArticle:
-    """
-    뉴스 기사를 PostgreSQL에 저장합니다.  
-    추가 변환(카테고리, 키워드, 임베딩) 후 DB에 삽입합니다.
-    """
-    writer = article.author if article.author else "Unknown"
-    try:
-        write_date = datetime.fromisoformat(article.published)
-    except Exception as e:
-        write_date = datetime.now()
+        self._initialized = True
 
-    # 기사 본문이 있다면 content 사용, 없으면 summary 사용
-    content = article.content if article.content else article.summary
+    def map(self, article: NewsArticle) -> NewsArticle:
+        if not self._initialized:
+            self._initialize()
 
-    try:
-        category = transform_classify_category(content)
-    except Exception as e:
-        print("Category transformation error:", e)
-        category = "미분류"
+        # 작성자: article.author가 없으면 "Unknown" 사용
+        writer = article.author if article.author else "Unknown"
+        try:
+            write_date = datetime.fromisoformat(article.published)
+        except Exception as e:
+            write_date = datetime.now()
 
-    try:
-        keywords = transform_extract_keywords(content)
-    except Exception as e:
-        print("Keywords transformation error:", e)
-        keywords = []
+        # 기사 본문이 있으면 content, 없으면 summary 사용
+        content = article.content if article.content else article.summary
 
-    try:
-        embedding = transform_to_embedding(content)
-        # pgvector 등 확장 모듈을 사용하지 않는 경우 JSON 문자열로 변환
-        embedding_str = json.dumps(embedding)
-    except Exception as e:
-        print("Embedding transformation error:", e)
-        embedding_str = json.dumps([])
+        try:
+            category = transform_classify_category(content)
+        except Exception as e:
+            print("Category transformation error:", e)
+            category = "미분류"
 
-    conn = get_db_conn()
-    cursor = conn.cursor()
-    try:
-        # 테이블명(news_article) 및 컬럼명은 실제 모델 구조에 맞게 수정하세요.
-        cursor.execute("""
-            INSERT INTO news_article (title, writer, write_date, category, content, url, keywords, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (url) DO NOTHING
-        """, (
-            article.title,
-            writer,
-            write_date,
-            category,
-            content,
-            article.link,
-            json.dumps(keywords),
-            embedding_str
-        ))
-    except Exception as e:
-        print("DB insertion error:", e)
-    finally:
-        cursor.close()
-    return article  # 반환값은 이후 체인 연산을 위해 그대로 반환합니다.
+        try:
+            keywords = transform_extract_keywords(content)
+        except Exception as e:
+            print("Keywords transformation error:", e)
+            keywords = []
+
+        try:
+            embedding = transform_to_embedding(content)
+            embedding_str = json.dumps(embedding)
+        except Exception as e:
+            print("Embedding transformation error:", e)
+            embedding_str = json.dumps([])
+
+        # PostgreSQL에 기사 삽입
+        cursor = self._db_conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO news_article (title, writer, write_date, category, content, url, keywords, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (url) DO NOTHING
+            """, (
+                article.title,
+                writer,
+                write_date,
+                category,
+                content,
+                article.link,
+                json.dumps(keywords, ensure_ascii=False),
+                embedding_str
+            ))
+        except Exception as e:
+            print("DB insertion error:", e)
+        finally:
+            cursor.close()
+
+        # HDFS에 파일 저장
+        safe_title = "".join(c for c in article.title[:50] if c.isalnum() or c in (' ', '-', '_')).replace(" ", "_")
+        filename = f"{write_date.strftime('%Y%m%d')}_{safe_title}.json"
+        # hdfs_path가 '/'로 끝나지 않을 경우 보정
+        if not self.hdfs_path.endswith("/"):
+            hdfs_file_path = self.hdfs_path + "/" + filename
+        else:
+            hdfs_file_path = self.hdfs_path + filename
+
+        data_to_save = {
+            "title": article.title,
+            "writer": writer,
+            "write_date": write_date.isoformat(),
+            "category": category,
+            "content": content,
+            "link": article.link,
+            "keywords": json.dumps(keywords),
+            "embedding": embedding_str
+        }
+        json_data = json.dumps(data_to_save, ensure_ascii=False, indent=2)
+        try:
+            with self.hdfs_client.write(hdfs_file_path, encoding='utf-8') as writer_obj:
+                writer_obj.write(json_data)
+            print(f"Successfully saved article to HDFS: {hdfs_file_path}")
+        except Exception as e:
+            print("HDFS file save error:", e)
+
+        return article  # 체인 연산을 위해 반환
 
 
 def main():
@@ -156,8 +194,8 @@ def main():
     # 메시지를 NewsArticle 모델로 변환
     processed_stream = stream.map(process_message)
 
-    # DB에 저장하는 로직을 map 연산자로 실행 (side-effect)
-    processed_stream = processed_stream.map(db_insertion)
+    # DB 삽입 및 HDFS 저장 로직을 MapFunction으로 실행
+    processed_stream = processed_stream.map(DBInsertionMapFunction())
 
     # 디버그를 위해 처리 결과를 콘솔에 출력 (원하는 경우 주석 처리 가능)
     processed_stream.print()
