@@ -1,7 +1,6 @@
 import pendulum
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.operators.bash import BashOperator
 
 local_tz = pendulum.timezone("Asia/Seoul")
@@ -14,10 +13,10 @@ default_args = {
 }
 
 with DAG(
-    dag_id='daily_report_dag2',
+    dag_id='daily_report_dag',
     default_args=default_args,
-    description='매일 새벽 2시에 Spark를 이용해 뉴스 리포트 생성',
-    schedule_interval='0 2 * * *',  # 한국 시간 기준 새벽 2시
+    description='매일 새벽 1시에 Spark를 이용해 뉴스 리포트 생성',
+    schedule_interval='0 1 * * *',  # 한국 시간 기준 새벽 1시
     start_date=datetime(2025, 2, 10, tzinfo=local_tz),
     catchup=False,
     tags=['daily', 'report', 'spark']
@@ -39,8 +38,6 @@ with DAG(
             'report/daily_report_{{ ds_nodash }}.pdf"'
         )
     )
-
-    # notify_report_generated
 
     submit_spark_job >> notify_report_generated
 
