@@ -12,6 +12,8 @@ import matplotlib.font_manager as fm
 from hdfs import InsecureClient
 
 def main(report_date_str):
+    print(f"시작 날짜: {report_date_str}")
+
     # Spark 세션 생성
     spark = SparkSession.builder \
             .appName("DailyNewsReport") \
@@ -52,6 +54,7 @@ def main(report_date_str):
 
     # 폰트 설정
     font_path = 'batch/Pretendard-Bold.ttf'
+    fm.fontManager.addfont(font_path)
     font_prop = fm.FontProperties(fname=font_path)
     plt.rcParams['font.family'] = font_prop.get_name()
 
@@ -60,7 +63,7 @@ def main(report_date_str):
     plt.bar(keyword_pd['keyword'], keyword_pd['count'], color='skyblue')
     plt.xlabel("키워드", fontproperties=font_prop)
     plt.ylabel("빈도수", fontproperties=font_prop)
-    plt.title(f"{start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')} 뉴스 리포트 - Top 10 Keywords", fontproperties=font_prop)
+    plt.title(f"{start_date.strftime('%Y-%m-%d')} 뉴스 리포트 - Top 10 Keywords", fontproperties=font_prop)
     plt.xticks(rotation=45, fontproperties=font_prop)
     plt.tight_layout()
 
