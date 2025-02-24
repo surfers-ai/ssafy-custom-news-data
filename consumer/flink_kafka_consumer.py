@@ -12,6 +12,7 @@ from pyflink.datastream.connectors import FlinkKafkaConsumer
 from pyflink.datastream.functions import MapFunction
 
 import psycopg2
+from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
 
 from preprocessing import transform_classify_category, transform_extract_keywords, transform_to_embedding
@@ -80,6 +81,14 @@ class DBInsertionMapFunction(MapFunction):
         # HDFS 클라이언트 초기화
         self.hdfs_client = InsecureClient('http://localhost:9870', user='hadoop-user')
         self.hdfs_path = '/user/news/realtime/'  # HDFS 내 데이터 저장 경로
+
+        # Elasticsearch 클라이언트 초기화
+        self.es = Elasticsearch(["http://localhost:9200"])
+        if not self.es.ping():
+            raise ValueError("Elasticsearch에 연결할 수 없습니다.")
+
+        if not self.es.indices.exists(index="news"):
+            self.es.indices.create(index="news")
 
         self._initialized = True
 
@@ -165,6 +174,24 @@ class DBInsertionMapFunction(MapFunction):
         except Exception as e:
             print("HDFS file save error:", e)
 
+        # Elasticsearch에 기사 저장
+        es_data = {
+            "title": article.title,
+            "writer": writer,
+            "write_date": write_date.isoformat(),
+            "category": category,
+            "content": content,
+            "url": article.link,
+            "keywords": keywords,
+            "embedding": embedding,
+        }
+
+        try:
+            self.es.index(index="news", document=es_data)
+            print(f"Successfully indexed article in Elasticsearch: {article.title}")
+        except Exception as e:
+            print("Elasticsearch indexing error:", e)
+
         return article  # 체인 연산을 위해 반환
 
 
@@ -172,8 +199,10 @@ def main():
     # Flink 스트리밍 환경 생성
     env = StreamExecutionEnvironment.get_execution_environment()
 
-    # 추가 Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
-    env.add_jars("file:///home/jiwoochris/projects/ssafy-custom-news-data/kafka/flink-sql-connector-kafka-3.3.0-1.20.jar")
+    # Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
+    env.add_jars(
+        "file:///home/honuuk/ssafy-custom-news-data/kafka-es/flink-sql-connector-kafka-3.3.0-1.20.jar"
+    )
 
     # Kafka consumer properties 설정
     kafka_props = {
@@ -200,6 +229,7 @@ def main():
     # 디버그를 위해 처리 결과를 콘솔에 출력 (원하는 경우 주석 처리 가능)
     processed_stream.print()
 
+    print("consumer is running...")
     # Flink Job 실행
     env.execute("Flink Kafka Consumer Job")
 
