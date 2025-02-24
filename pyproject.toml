@@ -18,6 +18,7 @@ tiktoken = "^0.8.0"
 pyspark = "^3.5.4"
 matplotlib = "^3.10.0"
 hdfs = "^2.7.3"
+elasticsearch = "^8.17.1"
 
 [tool.poetry.dev-dependencies]
 
