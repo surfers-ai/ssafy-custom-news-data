@@ -126,12 +126,15 @@ class DBInsertionMapFunction(MapFunction):
             embedding_str = json.dumps([])
 
         # PostgreSQL에 기사 삽입
+        # db에 저장된 id를 Elastic Search에도 저장하기 위해 RETURING id 쿼리 추가
         cursor = self._db_conn.cursor()
+        db_id = None
         try:
             cursor.execute("""
-                INSERT INTO news_article (title, writer, write_date, category, content, url, keywords, embedding)
+                INSERT INTO mynews_article (title, writer, write_date, category, content, url, keywords, embedding)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (url) DO NOTHING
+                RETURNING id;
             """, (
                 article.title,
                 writer,
@@ -142,10 +145,31 @@ class DBInsertionMapFunction(MapFunction):
                 json.dumps(keywords, ensure_ascii=False),
                 embedding_str
             ))
+            db_id = cursor.fetchone()[0]
+            print(f"Successfully saved article to Postgresql, id: {db_id}")
         except Exception as e:
             print("DB insertion error:", e)
         finally:
             cursor.close()
+
+        # Elasticsearch에 기사 저장
+        es_data = {
+            "id": db_id,
+            "title": article.title,
+            "writer": writer,
+            "write_date": write_date.isoformat(),
+            "category": category,
+            "content": content,
+            "url": article.link,
+            "keywords": keywords,
+            "embedding": embedding,
+        }
+
+        try:
+            self.es.index(index="news", document=es_data)
+            print(f"Successfully indexed article in Elasticsearch: {article.title}")
+        except Exception as e:
+            print("Elasticsearch indexing error:", e)
 
         # HDFS에 파일 저장
         safe_title = "".join(c for c in article.title[:50] if c.isalnum() or c in (' ', '-', '_')).replace(" ", "_")
@@ -174,23 +198,6 @@ class DBInsertionMapFunction(MapFunction):
         except Exception as e:
             print("HDFS file save error:", e)
 
-        # Elasticsearch에 기사 저장
-        es_data = {
-            "title": article.title,
-            "writer": writer,
-            "write_date": write_date.isoformat(),
-            "category": category,
-            "content": content,
-            "url": article.link,
-            "keywords": keywords,
-            "embedding": embedding,
-        }
-
-        try:
-            self.es.index(index="news", document=es_data)
-            print(f"Successfully indexed article in Elasticsearch: {article.title}")
-        except Exception as e:
-            print("Elasticsearch indexing error:", e)
 
         return article  # 체인 연산을 위해 반환
 
