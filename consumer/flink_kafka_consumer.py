@@ -152,24 +152,25 @@ class DBInsertionMapFunction(MapFunction):
         finally:
             cursor.close()
 
-        # Elasticsearch에 기사 저장
-        es_data = {
-            "id": db_id,
-            "title": article.title,
-            "writer": writer,
-            "write_date": write_date.isoformat(),
-            "category": category,
-            "content": content,
-            "url": article.link,
-            "keywords": keywords,
-            "embedding": embedding,
-        }
+        # DB에 저장 성공한 경우에만 Elasticsearch에 기사 저장
+        if db_id is not None:
+            es_data = {
+                "id": db_id,
+                "title": article.title,
+                "writer": writer,
+                "write_date": write_date.isoformat(),
+                "category": category,
+                "content": content,
+                "url": article.link,
+                "keywords": keywords,
+                "embedding": embedding,
+            }
 
-        try:
-            self.es.index(index="news", document=es_data)
-            print(f"Successfully indexed article in Elasticsearch: {article.title}")
-        except Exception as e:
-            print("Elasticsearch indexing error:", e)
+            try:
+                self.es.index(index="news", document=es_data)
+                print(f"Successfully indexed article in Elasticsearch: {article.title}")
+            except Exception as e:
+                print("Elasticsearch indexing error:", e)
 
         # HDFS에 파일 저장
         safe_title = "".join(c for c in article.title[:50] if c.isalnum() or c in (' ', '-', '_')).replace(" ", "_")
