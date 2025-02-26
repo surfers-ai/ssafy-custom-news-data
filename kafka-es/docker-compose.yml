@@ -29,6 +29,8 @@ services:
       - "9300:9300"
     environment:
       - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     volumes:
       - esdata:/usr/share/elasticsearch/data
 
@@ -38,6 +40,8 @@ services:
       - "5601:5601"
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PUBLICBASEURL=http://211.188.59.58:5601
     depends_on:
       - elasticsearch
 
