@@ -1,5 +1,6 @@
 import sys
 import argparse
+import os
 from datetime import datetime, timedelta
 
 from pyspark.sql import SparkSession
@@ -53,7 +54,7 @@ def main(report_date_str):
     keyword_pd = keyword_counts.limit(10).toPandas()
 
     # 폰트 설정
-    font_path = 'batch/Pretendard-Bold.ttf'
+    font_path = '/home/honuuk/ssafy-custom-news-data/batch/Pretendard-Bold.ttf'
     fm.fontManager.addfont(font_path)
     font_prop = fm.FontProperties(fname=font_path)
     plt.rcParams['font.family'] = font_prop.get_name()
@@ -68,7 +69,9 @@ def main(report_date_str):
     plt.tight_layout()
 
     # 리포트 파일 저장 경로 (Airflow DAG의 EmailOperator 등에서 참조할 경로)
-    report_file = f"report/daily_report_{report_date.strftime('%Y%m%d')}.pdf"
+    report_dir = "/home/honuuk/ssafy-custom-news-data/report"
+    os.makedirs(report_dir, exist_ok=True)  # 디렉토리가 없으면 생성
+    report_file = f"/home/honuuk/ssafy-custom-news-data/report/daily_report_{report_date.strftime('%Y%m%d')}.pdf"
     plt.savefig(report_file)
     plt.close()
 
