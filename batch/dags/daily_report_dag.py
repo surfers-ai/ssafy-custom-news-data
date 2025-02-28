@@ -26,7 +26,7 @@ with DAG(
         task_id='spark_daily_report',
         bash_command=(
             'echo "Spark 작업 시작" && '
-            'python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
+            'poetry run python /home/honuuk/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
             'echo "Spark 작업 완료"'
         )
     )
