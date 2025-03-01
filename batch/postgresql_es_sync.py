@@ -1,16 +1,21 @@
 import psycopg2
+import os
+
 from elasticsearch import Elasticsearch
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # PostgreSQL 연결 설정
 pg_conn = psycopg2.connect(
     host="localhost",
     database="news",
-    user="ssafyuser",
-    password="ssafyuser"
+    user=os.getenv("DB_USERNAME"),
+    password=os.getenv("DB_PASSWORD")
 )
 
 # Elasticsearch 연결 설정
-es = Elasticsearch(["http://localhost:9200"])
+es = Elasticsearch([os.getenv("ES_URL")])
 
 # PostgreSQL에서 ID 목록 가져오기
 pg_cursor = pg_conn.cursor()

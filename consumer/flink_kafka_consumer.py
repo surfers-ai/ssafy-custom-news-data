@@ -73,17 +73,17 @@ class DBInsertionMapFunction(MapFunction):
             host="localhost",
             port=5432,
             dbname="news",              # 데이터베이스 이름
-            user="postgres",            # 사용자명
-            password="new_password"     # 비밀번호
+            user=os.getenv("DB_USERNAME"),            # 사용자명
+            password=os.getenv("DB_PASSWORD")     # 비밀번호
         )
         self._db_conn.autocommit = True
 
         # HDFS 클라이언트 초기화
-        self.hdfs_client = InsecureClient('http://localhost:9870', user='hadoop-user')
+        self.hdfs_client = InsecureClient(os.getenv('HDFS_URL'), user=os.getenv('HDFS_USER'))
         self.hdfs_path = '/user/news/realtime/'  # HDFS 내 데이터 저장 경로
 
         # Elasticsearch 클라이언트 초기화
-        self.es = Elasticsearch(["http://localhost:9200"])
+        self.es = Elasticsearch([os.getenv("ES_URL")])
         if not self.es.ping():
             raise ValueError("Elasticsearch에 연결할 수 없습니다.")
 
@@ -208,9 +208,7 @@ def main():
     env = StreamExecutionEnvironment.get_execution_environment()
 
     # Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
-    env.add_jars(
-        "file:///home/honuuk/ssafy-custom-news-data/kafka-es/flink-sql-connector-kafka-3.3.0-1.20.jar"
-    )
+    env.add_jars(f"file://{os.getenv("KAFKA_CONNECTOR_PATH")}")
 
     # Kafka consumer properties 설정
     kafka_props = {
