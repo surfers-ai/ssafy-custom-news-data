@@ -26,7 +26,7 @@ with DAG(
         task_id='spark_daily_report',
         bash_command=(
             'echo "Spark 작업 시작" && '
-            'python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
+            'poetry run python /home/honuuk/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
             'echo "Spark 작업 완료"'
         )
     )
@@ -39,7 +39,16 @@ with DAG(
         )
     )
 
-    submit_spark_job >> notify_report_generated
+    data_sync_job = BashOperator(
+        task_id='hourly_data_sync',
+        bash_command=(
+            'echo "postgresql - es 싱크 시작" && '
+            'poetry run python /home/honuuk/ssafy-custom-news-data/batch/posgresql_es_sync.py &&'
+            'echo "postgresql - es 싱크 완료"'
+        )
+    )
+
+    submit_spark_job >> notify_report_generated >> data_sync_job
 
 if __name__ == "__main__":
     dag.test()

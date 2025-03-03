@@ -12,6 +12,7 @@ from pyflink.datastream.connectors import FlinkKafkaConsumer
 from pyflink.datastream.functions import MapFunction
 
 import psycopg2
+from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
 
 from preprocessing import transform_classify_category, transform_extract_keywords, transform_to_embedding
@@ -72,14 +73,22 @@ class DBInsertionMapFunction(MapFunction):
             host="localhost",
             port=5432,
             dbname="news",              # 데이터베이스 이름
-            user="postgres",            # 사용자명
-            password="new_password"     # 비밀번호
+            user=os.getenv("DB_USERNAME"),            # 사용자명
+            password=os.getenv("DB_PASSWORD")     # 비밀번호
         )
         self._db_conn.autocommit = True
 
         # HDFS 클라이언트 초기화
-        self.hdfs_client = InsecureClient('http://localhost:9870', user='hadoop-user')
+        self.hdfs_client = InsecureClient(os.getenv('HDFS_URL'), user=os.getenv('HDFS_USER'))
         self.hdfs_path = '/user/news/realtime/'  # HDFS 내 데이터 저장 경로
+
+        # Elasticsearch 클라이언트 초기화
+        self.es = Elasticsearch([os.getenv("ES_URL")])
+        if not self.es.ping():
+            raise ValueError("Elasticsearch에 연결할 수 없습니다.")
+
+        if not self.es.indices.exists(index="news"):
+            self.es.indices.create(index="news")
 
         self._initialized = True
 
@@ -117,12 +126,15 @@ class DBInsertionMapFunction(MapFunction):
             embedding_str = json.dumps([])
 
         # PostgreSQL에 기사 삽입
+        # db에 저장된 id를 Elastic Search에도 저장하기 위해 RETURING id 쿼리 추가
         cursor = self._db_conn.cursor()
+        db_id = None
         try:
             cursor.execute("""
-                INSERT INTO news_article (title, writer, write_date, category, content, url, keywords, embedding)
+                INSERT INTO mynews_article (title, writer, write_date, category, content, url, keywords, embedding)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (url) DO NOTHING
+                RETURNING id;
             """, (
                 article.title,
                 writer,
@@ -133,10 +145,32 @@ class DBInsertionMapFunction(MapFunction):
                 json.dumps(keywords, ensure_ascii=False),
                 embedding_str
             ))
+            db_id = cursor.fetchone()[0]
+            print(f"Successfully saved article to Postgresql, id: {db_id}")
         except Exception as e:
             print("DB insertion error:", e)
         finally:
             cursor.close()
+
+        # DB에 저장 성공한 경우에만 Elasticsearch에 기사 저장
+        if db_id is not None:
+            es_data = {
+                "id": db_id,
+                "title": article.title,
+                "writer": writer,
+                "write_date": write_date.isoformat(),
+                "category": category,
+                "content": content,
+                "url": article.link,
+                "keywords": keywords,
+                "embedding": embedding,
+            }
+
+            try:
+                self.es.index(index="news", document=es_data)
+                print(f"Successfully indexed article in Elasticsearch: {article.title}")
+            except Exception as e:
+                print("Elasticsearch indexing error:", e)
 
         # HDFS에 파일 저장
         safe_title = "".join(c for c in article.title[:50] if c.isalnum() or c in (' ', '-', '_')).replace(" ", "_")
@@ -165,6 +199,7 @@ class DBInsertionMapFunction(MapFunction):
         except Exception as e:
             print("HDFS file save error:", e)
 
+
         return article  # 체인 연산을 위해 반환
 
 
@@ -172,8 +207,8 @@ def main():
     # Flink 스트리밍 환경 생성
     env = StreamExecutionEnvironment.get_execution_environment()
 
-    # 추가 Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
-    env.add_jars("file:///home/jiwoochris/projects/ssafy-custom-news-data/kafka/flink-sql-connector-kafka-3.3.0-1.20.jar")
+    # Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
+    env.add_jars(f"file://{os.getenv("KAFKA_CONNECTOR_PATH")}")
 
     # Kafka consumer properties 설정
     kafka_props = {
@@ -200,6 +235,7 @@ def main():
     # 디버그를 위해 처리 결과를 콘솔에 출력 (원하는 경우 주석 처리 가능)
     processed_stream.print()
 
+    print("consumer is running...")
     # Flink Job 실행
     env.execute("Flink Kafka Consumer Job")
 
