@@ -45,7 +45,10 @@ Kafka 실행을 위해 Docker를 설치합니다.
    ```bash
    sudo docker ps
    ```
-   
+
+<img width="1435" alt="image" src="https://github.com/user-attachments/assets/1bf6bd87-61cf-4382-82a9-215d1d63b307" />
+
+
 ## 2. 카프카 Producer, Consumer 실행
 
 Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인을 테스트할 수 있습니다.
@@ -74,7 +77,10 @@ Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인
   
 ### 2.3 결과 확인
 터미널에서 producing, consuming이 잘 되는지 확인하고 db에 저장이 잘 되는지 확인합니다.
+
 <img width="1329" alt="image" src="https://github.com/user-attachments/assets/a1e534a0-2acf-4e3d-8387-b74b71497257" />
+
+ 
 <img width="636" alt="image" src="https://github.com/user-attachments/assets/93abc7c1-4d6c-403a-a299-868bfe5d060d" />
 
 
