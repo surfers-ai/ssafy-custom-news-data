@@ -193,5 +193,90 @@ stop-dfs.sh
 ## 2. 필요한 라이브러리 설치
 
 ```bash
-poetry add
+poetry add matplotlib pyspark hdfs 
 ```
+
+## 3. Airflow로 배치
+
+Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한 내용은 [Airflow 공식 문서](https://airflow.apache.org/docs/apache-airflow/stable/start.html)를 참고하세요.
+
+### 3.1. Poetry 가상환경 활성화
+
+   ```bash
+   poetry shell
+   ```
+
+### 3.2. AIRFLOW_HOME 환경 변수 설정
+   Airflow 작업 디렉토리를 설정합니다. \*실제 경로를 넣으셔야 합니다.
+
+   ```bash
+   echo 'export AIRFLOW_HOME=/home/jiwoochris/projects/ssafy-custom-news-data/batch' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+### 3.3. Airflow 설치
+
+   아래 스크립트는 Airflow 버전 2.10.4를 설치하는 예시입니다.
+
+   ```bash
+   AIRFLOW_VERSION=2.10.4
+
+   # 현재 사용 중인 Python 버전 자동 추출 (지원되지 않는 버전을 사용 중이면 직접 설정)
+   PYTHON_VERSION="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+
+   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+   # 예: Python 3.8을 사용하는 경우 constraints URL 예: https://raw.githubusercontent.com/apache/airflow/constraints-2.10.4/constraints-3.8.txt
+
+   pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
+   ```
+
+### 3.4. Airflow Spark Provider 설치
+
+   Kafka 등과 연동하여 Spark 작업을 수행하기 위해 provider를 설치합니다.
+
+   ```bash
+   pip install apache-airflow-providers-apache-spark
+   ```
+
+### 3.5. Airflow 설정 파일 수정
+
+   Airflow 설정 파일(batch/airflow.cfg)을 열어 dags_folder 경로를 수정합니다.
+
+   ```bash
+   dags_folder = /home/jiwoochris/projects/ssafy-custom-news-data/batch/dags
+   ```
+
+   batch/dags/daily_report_dag.py 파일에서 아래 부분을 찾아서 올바른 경로로 수정합니다.
+
+   ```
+   'python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
+   ```
+
+   수정 후 저장합니다.
+
+### 3.6. Airflow 실행
+
+   screen을 생성하고 Airflow를 standalone 모드로 실행합니다.
+
+   ```bash
+   # screen 생성
+   screen -S airflow
+
+   # Airflow 실행
+   airflow standalone
+
+   # screen 세션 분리 (Ctrl+A, D)
+   ```
+
+### 3.7. DAG 확인
+
+   Airflow 웹 UI에서 DAG를 확인할 수 있습니다.
+
+   ```bash
+   # 기본 접속 정보
+   # URL: http://localhost:8080
+   # Username: admin
+   # Password: 터미널에 출력된 비밀번호 확인
+   ```
+
+   daily_report_dag가 정상적으로 등록되었는지 확인하고, 필요한 경우 활성화합니다.
