@@ -142,7 +142,6 @@ def main():
                 if news_item["link"] not in saved_links:
                     news_item["content"] = crawl_article(news_item["link"])
                     save(news_item)
-
                     saved_links.add(news_item["link"])
             # 60초 대기 후 다시 피드 확인
             time.sleep(60)
