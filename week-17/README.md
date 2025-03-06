@@ -1,87 +1,197 @@
-# 15주차 관통 PJT: 스트리밍 데이터 파이프라인 구축(Kafka + Flink)
+# 17주차 관통 PJT: 배치처리 워크플로우 파이프라인 구축(Airflow + Spark)
 
 
-> **목적: 카프카와 플링크를 배우고, 실시간 데이터를 핸들링 하는 환경을 직접 구축한다**
+> **목적: Airflow와 Spark 환경을 기반으로 워크플로우에 따른 분기를 나눌 수 있고, 배치 데이터를 처리할 수 있는 능력을 배양한다. 12주차에 배운 머신러닝 알고리즘(Embedding 개념)을 상기한다**
 >
 > 세부사항:
-> - 카프카와 플링크가 반드시 사용되어야 한다.
-> - 14주차에서 획득한 데이터와 DB를 사용해야 한다.
-> - 만약 필요시, RSS에서 새로운 데이터를 땡겨올 수 있어야 한다. 그리고 해당 데이터도 처리가 되어야 한다.
+> - 트래픽이 적은 매일 새벽 1시마다 오늘의 기사, 트렌드, 키워드 분석 등 리포트 발행
 
 ## 목차
-1. 카프카, 플링크 개발환경 구축
-2. 카프카 producer, consumer 실행
+1. Hadoop 설치 및 설정
+2. Poetry 라이브러리 설치
+3. Airflow로 배치
 
 
-## 1. 카프카, 플링크 개발환경 구축
-### 1.1. 패키지 설치
-   터미널에서 아래 명령어를 실행하여 producer, consumer 실행에 필요한 패키지를 설치합니다.
+## 1. Hadoop 설치 및 설정
+Hadoop을 통해 HDFS (분산 파일 시스템)를 설정하여 데이터를 저장하고 관리할 수 있습니다.
 
-   ```bash
-   poetry add kafka-python apache-flink pydantic setuptools
-   ```
+### 1.1. Java 설치
 
-### 1.2. Docker 설치
-Kafka 실행을 위해 Docker를 설치합니다.  
-자세한 내용은 [Docker 설치 가이드 (Ubuntu)](https://docs.docker.com/engine/install/ubuntu/)를 참고하세요.
+Hadoop 실행에 필요한 Java를 설치합니다.
 
-### 1.3. Kafka 실행
+```bash
+sudo apt-get update
+sudo apt-get install default-jdk
+```
 
-1. **Kafka 디렉토리로 이동**  
-   터미널에서 Kafka 관련 파일이 위치한 디렉토리로 이동합니다.
+### 1.2. Hadoop 다운로드 및 설치
 
-   ```bash
-   cd kafka
-   ```
-
-2. **Docker Compose를 이용해 Kafka 실행**
+1. Hadoop 3.4.0을 다운로드합니다.
 
    ```bash
-   sudo docker compose up -d
+   wget https://downloads.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz
    ```
 
-3. **Docker 컨테이너 상태 확인**
+2. 다운로드한 tar.gz 파일을 압축 해제한 후, `/usr/local/hadoop` 디렉토리로 이동합니다.
 
    ```bash
-   sudo docker ps
+   tar -xzvf hadoop-3.4.0.tar.gz
+   sudo mv hadoop-3.4.0 /usr/local/hadoop
    ```
 
-<img width="1435" alt="image" src="https://github.com/user-attachments/assets/1bf6bd87-61cf-4382-82a9-215d1d63b307" />
+### 1.3. Hadoop 환경 변수 설정
+
+사용자 홈 디렉토리의 `~/.bashrc` 파일에 아래 환경 변수를 추가합니다.
+
+```bash
+# Hadoop Setting
+export HADOOP_HOME=/usr/local/hadoop
+export PATH=$PATH:$HADOOP_HOME/bin
+export PATH=$PATH:$HADOOP_HOME/sbin
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+export PATH=$PATH:$JAVA_HOME/bin
+```
+
+변경 사항을 적용합니다.
+
+```bash
+source ~/.bashrc
+```
+
+### 1.4. Hadoop 설정 파일 수정
+
+#### (1) core-site.xml 설정
+
+아래 명령어로 파일을 열어 수정합니다.
+
+```bash
+nano $HADOOP_HOME/etc/hadoop/core-site.xml
+```
+
+파일에 다음 내용을 입력합니다.
+
+```xml
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://localhost:9000</value>
+    </property>
+</configuration>
+```
+
+#### (2) hdfs-site.xml 설정
+
+파일을 열어 아래 내용을 입력합니다.  
+**주의:** `dfs.namenode.name.dir`와 `dfs.datanode.data.dir`의 경로에 있는 `사용자이름` 부분은 본인의 리눅스 사용자 이름으로 변경하세요.
+
+```bash
+nano $HADOOP_HOME/etc/hadoop/hdfs-site.xml
+```
+
+```xml
+<configuration>
+  <property>
+    <name>dfs.replication</name>
+    <value>1</value>
+  </property>
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///home/사용자이름/hadoopdata/hdfs/namenode</value>
+  </property>
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///home/사용자이름/hadoopdata/hdfs/datanode</value>
+  </property>
+</configuration>
+```
+
+### 1.5. SSH 설정
+
+Hadoop 클러스터 환경에서 SSH가 필요하므로 SSH 서버를 설치합니다.
+
+```bash
+sudo apt-get install openssh-server
+```
+
+### 1.6. JAVA_HOME 설정 (Hadoop용)
+
+Hadoop 환경 설정 파일을 열어 JAVA_HOME 경로를 지정합니다.
+
+```bash
+nano $HADOOP_HOME/etc/hadoop/hadoop-env.sh
+```
+
+파일 내에 아래 내용을 추가하거나 수정합니다.
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/
+```
+
+### 1.7. HDFS 데이터 디렉토리 생성
+
+Hadoop이 데이터를 저장할 디렉토리를 생성합니다.
+
+```bash
+mkdir -p ~/hadoopdata/hdfs/namenode
+mkdir -p ~/hadoopdata/hdfs/datanode
+```
+
+### 1.8. HDFS 포맷
+
+이전 단계에서 생성한 이름노드 디렉토리를 포맷합니다.
+
+```bash
+hdfs namenode -format
+```
+
+### 1.9. HDFS 데몬 시작
+
+HDFS 관련 데몬을 시작합니다.
+
+```bash
+start-dfs.sh
+```
+
+#### 1.9.1. 데몬 실행 확인
+
+다음 명령어로 실행 중인 Java 프로세스를 확인하여 `NameNode`, `DataNode`, `SecondaryNameNode`가 실행 중인지 확인합니다.
+
+```bash
+jps
+```
+
+### 1.10. HDFS 사용해보기
+
+#### 1.10.1. 디렉토리 생성
+
+HDFS 내에 디렉토리를 생성합니다.
+
+```bash
+hdfs dfs -mkdir /user
+hdfs dfs -mkdir /user/news
+hdfs dfs -mkdir /user/news/realtime
+hdfs dfs -mkdir /user/news/news_archive
+```
+
+#### 1.10.2. 파일 목록 확인
+
+생성한 디렉토리 내의 파일 목록을 확인합니다.
+
+```bash
+hdfs dfs -ls /user/news/
+```
+
+### 1.11. HDFS 데몬 종료
+
+HDFS 데몬을 종료합니다.
+
+```bash
+stop-dfs.sh
+```
 
 
-## 2. 카프카 Producer, Consumer 실행
+## 2. 필요한 라이브러리 설치
 
-Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인을 테스트할 수 있습니다.
-
-### 2.1 Consumer 실행
-  Kafka로부터 메시지를 소비하는 스크립트를 실행합니다.
-
-  ```bash
-  # Consumer를 위한 screen 생성 및 실행
-  screen -S kafka-consumer
-  poetry run python consumer/flink_kafka_consumer.py
-  ```
-
-  스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
-
-### 2.2 Producer 실행
-  RSS 피드 데이터를 Kafka로 전송하는 스크립트를 실행합니다.
-
-  ```bash
-  # Producer를 위한 screen 생성 및 실행
-  screen -S kafka-producer
-  poetry run python producer/rss_kafka_producer.py
-  ```
-
-  스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
-  
-### 2.3 결과 확인
-터미널에서 producing, consuming이 잘 되는지 확인하고 db에 저장이 잘 되는지 확인합니다.
-
-<img width="1329" alt="image" src="https://github.com/user-attachments/assets/a1e534a0-2acf-4e3d-8387-b74b71497257" />
-
- 
-<img width="636" alt="image" src="https://github.com/user-attachments/assets/93abc7c1-4d6c-403a-a299-868bfe5d060d" />
-
-
-
+```bash
+poetry add
+```
