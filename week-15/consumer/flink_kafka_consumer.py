@@ -14,7 +14,11 @@ from pyflink.datastream.functions import MapFunction
 import psycopg2
 from dotenv import load_dotenv
 
-from rss_transform import transform_classify_category, transform_extract_keywords, transform_to_embedding
+from rss_transform import (
+    transform_classify_category,
+    transform_extract_keywords,
+    transform_to_embedding,
+)
 
 # .env 파일에 필요한 설정이 있다면 로드합니다.
 load_dotenv()
@@ -22,6 +26,7 @@ load_dotenv()
 
 class NewsArticle(BaseModel):
     """뉴스 기사 데이터를 위한 Pydantic 모델"""
+
     title: str = Field(description="기사 제목")
     link: str = Field(description="기사 URL")
     summary: str = Field(description="기사 요약")
@@ -46,7 +51,7 @@ def process_message(json_str: str) -> NewsArticle:
             summary="메시지 파싱 중 오류가 발생했습니다",
             published="",
             author="",
-            content=""
+            content="",
         )
 
 
@@ -55,6 +60,7 @@ class DBInsertionMapFunction(MapFunction):
     DB에 뉴스 기사를 저장하고 HDFS에 파일로 기록하는 함수.
     RichMapFunction을 사용할 수 없는 경우, MapFunction과 lazy initialization을 이용합니다.
     """
+
     def __init__(self):
         # lazy initialization 플래그
         self._initialized = False
@@ -68,9 +74,9 @@ class DBInsertionMapFunction(MapFunction):
         self._db_conn = psycopg2.connect(
             host="localhost",
             port=5432,
-            dbname="news",              # 데이터베이스 이름
-            user=os.getenv("DB_USERNAME"),            # 사용자명
-            password=os.getenv("DB_PASSWORD")     # 비밀번호
+            dbname="news",  # 데이터베이스 이름
+            user=os.getenv("DB_USERNAME"),  # 사용자명
+            password=os.getenv("DB_PASSWORD"),  # 비밀번호
         )
         self._db_conn.autocommit = True
 
@@ -110,21 +116,24 @@ class DBInsertionMapFunction(MapFunction):
         # PostgreSQL에 기사 삽입
         cursor = self._db_conn.cursor()
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO mynews_article (title, writer, write_date, category, content, url, keywords, embedding)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (url) DO NOTHING
                 RETURNING id;
-            """, (
-                article.title,
-                writer,
-                write_date,
-                category,
-                content,
-                article.link,
-                json.dumps(keywords, ensure_ascii=False),
-                embedding_str
-            ))
+            """,
+                (
+                    article.title,
+                    writer,
+                    write_date,
+                    category,
+                    content,
+                    article.link,
+                    json.dumps(keywords, ensure_ascii=False),
+                    embedding_str,
+                ),
+            )
             print(f"Successfully saved article to Postgresql, title: {article.title}")
         except Exception as e:
             print("DB insertion error:", e)
@@ -139,9 +148,11 @@ def main():
     env = StreamExecutionEnvironment.get_execution_environment()
 
     # 현재 파일을 상위 디렉토리 추출
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__ )))
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     # Kafka connector Jar 파일 경로 설정
-    kafka_connector_jar_path = os.path.join(root_dir, "kafka", "flink-sql-connector-kafka-3.3.0-1.20.jar")
+    kafka_connector_jar_path = os.path.join(
+        root_dir, "kafka", "flink-sql-connector-kafka-3.3.0-1.20.jar"
+    )
 
     print(kafka_connector_jar_path)
 
@@ -153,15 +164,11 @@ def main():
     group_id = os.getenv("KAKFA_GROUP_ID")
     print(topics, bootstrap_servers, group_id)
 
-
     # Kafka Consumer 생성 (토픽: "news")
     kafka_consumer = FlinkKafkaConsumer(
         topics=topics,
         deserialization_schema=SimpleStringSchema(),  # 문자열 메시지 수신
-        properties={
-        'bootstrap.servers': bootstrap_servers,
-        'group.id': group_id
-    }
+        properties={"bootstrap.servers": bootstrap_servers, "group.id": group_id},
     )
 
     # Kafka에서 메시지 읽어오기
