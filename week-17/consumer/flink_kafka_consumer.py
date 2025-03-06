@@ -12,6 +12,7 @@ from pyflink.datastream.connectors import FlinkKafkaConsumer
 from pyflink.datastream.functions import MapFunction
 
 import psycopg2
+from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
 
 from rss_transform import (
@@ -19,6 +20,9 @@ from rss_transform import (
     transform_extract_keywords,
     transform_to_embedding,
 )
+
+# HDFS 클라이언트 관련 모듈
+from hdfs import InsecureClient
 
 # .env 파일에 필요한 설정이 있다면 로드합니다.
 load_dotenv()
@@ -80,6 +84,22 @@ class DBInsertionMapFunction(MapFunction):
         )
         self._db_conn.autocommit = True
 
+        # HDFS 클라이언트 초기화
+        self.hdfs_client = InsecureClient(
+            os.getenv("HDFS_URL"), user=os.getenv("HDFS_USER")
+        )
+        self.hdfs_path = "/user/news/realtime/"  # HDFS 내 데이터 저장 경로
+
+        # Elasticsearch 클라이언트 초기화
+        self.es = Elasticsearch([os.getenv("ES_URL")])
+        if not self.es.ping():
+            raise ValueError("Elasticsearch에 연결할 수 없습니다.")
+
+        if not self.es.indices.exists(index="news"):
+            self.es.indices.create(index="news")
+
+        self._initialized = True
+
     def map(self, article: NewsArticle) -> NewsArticle:
         if not self._initialized:
             self._initialize()
@@ -114,7 +134,9 @@ class DBInsertionMapFunction(MapFunction):
             embedding_str = json.dumps([])
 
         # PostgreSQL에 기사 삽입
+        # db에 저장된 id를 Elastic Search에도 저장하기 위해 RETURING id 쿼리 추가
         cursor = self._db_conn.cursor()
+        db_id = None
         try:
             cursor.execute(
                 """
@@ -134,11 +156,61 @@ class DBInsertionMapFunction(MapFunction):
                     embedding_str,
                 ),
             )
-            print(f"Successfully saved article to Postgresql, title: {article.title}")
+            db_id = cursor.fetchone()[0]
+            print(f"Successfully saved article to Postgresql, id: {db_id}")
         except Exception as e:
             print("DB insertion error:", e)
         finally:
             cursor.close()
+
+        # DB에 저장 성공한 경우에만 Elasticsearch에 기사 저장
+        if db_id is not None:
+            es_data = {
+                "id": db_id,
+                "title": article.title,
+                "writer": writer,
+                "write_date": write_date.isoformat(),
+                "category": category,
+                "content": content,
+                "url": article.link,
+                "keywords": keywords,
+                "embedding": embedding,
+            }
+
+            try:
+                self.es.index(index="news", document=es_data)
+                print(f"Successfully indexed article in Elasticsearch: {article.title}")
+            except Exception as e:
+                print("Elasticsearch indexing error:", e)
+
+        # HDFS에 파일 저장
+        safe_title = "".join(
+            c for c in article.title[:50] if c.isalnum() or c in (" ", "-", "_")
+        ).replace(" ", "_")
+        filename = f"{write_date.strftime('%Y%m%d')}_{safe_title}.json"
+        # hdfs_path가 '/'로 끝나지 않을 경우 보정
+        if not self.hdfs_path.endswith("/"):
+            hdfs_file_path = self.hdfs_path + "/" + filename
+        else:
+            hdfs_file_path = self.hdfs_path + filename
+
+        data_to_save = {
+            "title": article.title,
+            "writer": writer,
+            "write_date": write_date.isoformat(),
+            "category": category,
+            "content": content,
+            "link": article.link,
+            "keywords": json.dumps(keywords),
+            "embedding": embedding_str,
+        }
+        json_data = json.dumps(data_to_save, ensure_ascii=False, indent=2)
+        try:
+            with self.hdfs_client.write(hdfs_file_path, encoding="utf-8") as writer_obj:
+                writer_obj.write(json_data)
+            print(f"Successfully saved article to HDFS: {hdfs_file_path}")
+        except Exception as e:
+            print("HDFS file save error:", e)
 
         return article  # 체인 연산을 위해 반환
 
@@ -177,7 +249,7 @@ def main():
     # 메시지를 NewsArticle 모델로 변환
     processed_stream = stream.map(process_message)
 
-    # DB 삽입 로직을 MapFunction으로 실행
+    # DB 삽입 및 HDFS 저장 로직을 MapFunction으로 실행
     processed_stream = processed_stream.map(DBInsertionMapFunction())
 
     # 디버그를 위해 처리 결과를 콘솔에 출력 (원하는 경우 주석 처리 가능)

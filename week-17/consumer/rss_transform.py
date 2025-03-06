@@ -59,6 +59,7 @@ def transform_to_embedding(text: str) -> list[float]:
     텍스트를 수치형 벡터로 변환하는 변환 로직
     """
     text = preprocess_content(text)
+
     client = OpenAI()
     response = client.embeddings.create(input=text, model="text-embedding-3-small")
     return response.data[0].embedding

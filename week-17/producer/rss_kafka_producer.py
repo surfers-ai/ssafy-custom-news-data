@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # RSS 피드 URL (예: Khan 뉴스 RSS)
 RSS_FEED_URL = "https://www.khan.co.kr/rss/rssdata/total_news.xml"
 # Kafka 브로커 주소 (실제 환경에 맞게 수정)
@@ -23,8 +22,9 @@ print(KAFKA_BROKER, TOPIC)
 # Kafka Producer 생성 (value는 JSON 직렬화)
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER,
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
 )
+
 
 def fetch_rss_feed():
     """
@@ -38,9 +38,10 @@ def fetch_rss_feed():
             "link": entry.link,
             "summary": entry.summary,
             "published": entry.updated,
-            "author": entry.author
+            "author": entry.author,
         }
         yield news_item
+
 
 def crawl_article(url: str) -> str:
     """특정 기사 URL을 크롤링해 기사 본문을 반환합니다."""
@@ -64,6 +65,7 @@ def crawl_article(url: str) -> str:
         print(f"오류 발생: {e}")
         return ""
 
+
 def main():
     # 중복 전송 방지를 위해 처리한 링크를 저장하는 집합
     seen_links = set()
@@ -73,17 +75,18 @@ def main():
                 # 뉴스 링크를 기준으로 중복 체크
                 if news_item["link"] not in seen_links:
                     content = crawl_article(news_item["link"])
-
-                    news_item["content"] = content                    
+                    news_item["content"] = content
                     producer.send(TOPIC, news_item)
-                    
                     seen_links.add(news_item["link"])
-                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Sent: {news_item['title']}")
+                    print(
+                        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Sent: {news_item['title']}"
+                    )
             # 60초 대기 후 다시 피드 확인
             time.sleep(60)
         except Exception as e:
             print("Error:", e)
             time.sleep(60)
+
 
 if __name__ == "__main__":
     main()
