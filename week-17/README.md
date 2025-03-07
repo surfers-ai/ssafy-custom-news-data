@@ -238,23 +238,7 @@ Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한
    pip install apache-airflow-providers-apache-spark
    ```
 
-### 3.5. Airflow 설정 파일 수정
-
-   Airflow 설정 파일(batch/airflow.cfg)을 열어 dags_folder 경로를 수정합니다.
-
-   ```bash
-   dags_folder = /home/jiwoochris/projects/ssafy-custom-news-data/batch/dags
-   ```
-
-   batch/dags/daily_report_dag.py 파일에서 아래 부분을 찾아서 올바른 경로로 수정합니다.
-
-   ```
-   'python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
-   ```
-
-   수정 후 저장합니다.
-
-### 3.6. Airflow 실행
+### 3.5. Airflow 실행
 
    screen을 생성하고 Airflow를 standalone 모드로 실행합니다.
 
@@ -268,7 +252,7 @@ Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한
    # screen 세션 분리 (Ctrl+A, D)
    ```
 
-### 3.7. DAG 확인
+### 3.6. DAG 확인
 
    Airflow 웹 UI에서 DAG를 확인할 수 있습니다.
 
