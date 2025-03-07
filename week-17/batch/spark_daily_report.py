@@ -9,15 +9,24 @@ from pyspark.sql.types import ArrayType, StringType
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-# HDFS 클라이언트를 이용해 파일 이동 (pyhdfs, hdfs 라이브러리 등 여러가지 방법이 있으나 여기서는 InsecureClient 사용)
-from hdfs import InsecureClient
+from dotenv import load_dotenv
+
+load_dotenv()
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 def main(report_date_str):
     print(f"시작 날짜: {report_date_str}")
 
     # Spark 세션 생성
-    spark = SparkSession.builder.appName("DailyNewsReport").getOrCreate()
+    spark = (
+        SparkSession.builder.config(
+            "spark.driver.extraClassPath", "./postgresql-42.7.5.jar"
+        )
+        .appName("DailyNewsReport")
+        .getOrCreate()
+    )
 
     # 보고서 기준 날짜 처리 (YYYY-MM-DD)
     report_date = datetime.strptime(report_date_str, "%Y-%m-%d")
@@ -25,11 +34,23 @@ def main(report_date_str):
     start_date = report_date
     end_date = report_date + timedelta(days=1)
 
-    # HDFS의 /user/news/realtime 디렉터리 내 모든 JSON 파일 읽기
-    # Spark가 HDFS와 연동되어 있다면 경로 앞에 hdfs:// 접두어가 필요할 수 있습니다.
-    hdfs_input_path = "hdfs://localhost:9000/user/news/realtime/*.json"
-    df = spark.read.option("multiLine", True).json(hdfs_input_path)
+    df = (
+        spark.read.format("jdbc")
+        .option("url", f"jdbc:postgresql://localhost:5432/news")
+        .option("driver", "org.postgresql.Driver")
+        .option("dbtable", "mynews_article")
+        .option(
+            "user",
+            os.getenv("DB_USERNAME"),
+        )
+        .option(
+            "password",
+            os.getenv("DB_PASSWORD"),
+        )
+        .load()
+    )
 
+    df.show(10)
     # write_date는 ISO 형식의 문자열로 저장되어 있으므로 timestamp로 변환
     df = df.withColumn("write_date_ts", to_timestamp(col("write_date")))
 
@@ -62,9 +83,8 @@ def main(report_date_str):
     keyword_pd = keyword_counts.limit(10).toPandas()
 
     # 폰트 설정
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+
     font_path = os.path.join(current_dir, "Pretendard-Bold.ttf")
-    print(font_path)
 
     fm.fontManager.addfont(font_path)
     font_prop = fm.FontProperties(fname=font_path)
@@ -85,12 +105,11 @@ def main(report_date_str):
     # 리포트 파일 저장 경로 (Airflow DAG의 EmailOperator 등에서 참조할 경로)
     parent_dir = os.path.dirname(current_dir)
     os.path.join(current_dir, "Pretendard-Bold.ttf")
-    report_dir = os.path.join(parent_dir, "/report")
-    print(report_dir)
+    report_dir = os.path.join(parent_dir, "report")
 
     os.makedirs(report_dir, exist_ok=True)  # 디렉토리가 없으면 생성
     report_file = os.path.join(
-        report_dir, f"/daily_report_{report_date.strftime('%Y%m%d')}.pdf"
+        report_dir, f"daily_report_{report_date.strftime('%Y%m%d')}.pdf"
     )
     plt.savefig(report_file)
     plt.close()
@@ -98,27 +117,6 @@ def main(report_date_str):
     print(f"리포트가 {report_file} 에 저장되었습니다.")
 
     spark.stop()
-
-    # 리포트 발행 이후, 처리한 파일들을 /news_archive 디렉터리로 이동
-    try:
-        # HDFS 클라이언트 초기화 (환경에 맞게 URL, user 수정)
-        client = InsecureClient("http://localhost:9870", user="news")
-        source_dir = "/user/news/realtime"
-        target_dir = "/news_archive"
-
-        # source 디렉터리 내 파일 목록 조회
-        files = client.list(source_dir)
-        if not files:
-            print(f"{source_dir} 디렉터리에 이동할 파일이 없습니다.")
-        else:
-            for file in files:
-                source_path = f"{source_dir}/{file}"
-                target_path = f"{target_dir}/{file}"
-                client.rename(source_path, target_path)
-                print(f"파일 {source_path} -> {target_path} 로 이동")
-            print(f"모든 파일이 {target_dir}로 이동되었습니다.")
-    except Exception as e:
-        print("파일 이동 중 오류 발생:", e)
 
 
 if __name__ == "__main__":

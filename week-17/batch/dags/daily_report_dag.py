@@ -12,8 +12,8 @@ default_args = {
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
-current_dir = os.path.dirname(os.path.abspath(__file__))
-print(current_dir)
+
+batch_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 with DAG(
     dag_id="daily_report_dag",
@@ -29,10 +29,10 @@ with DAG(
         task_id="spark_daily_report",
         bash_command=(
             'echo "Spark 작업 시작"'
-            "cd /home/honuuk/ssafy-custom-new-data"
+            f"cd {batch_dir}"
             "poetry install --no-root"
             "poetry shell"
-            "poetry run python ./batch/spark_daily_report.py --date {{ ds }} &&"
+            "poetry run python ./spark_daily_report.py --date {{ ds }} &&"
             'echo "Spark 작업 완료"'
         ),
     )
