@@ -1,25 +1,124 @@
-# SSAFY 맞춤형 뉴스 데이터 파이프라인 환경 설정 가이드
+# SSAFY 맞춤형 뉴스 데이터 파이프라인 환경 설정 가이드 정리
 
-## 1. Hadoop 설치 및 설정
+이 가이드는 **PostgreSQL**, **Hadoop**, **Kafka**, **Python 라이브러리 관리 (Poetry)**, 그리고 **Airflow**를 이용하여 SSAFY 맞춤형 뉴스 데이터 파이프라인 환경을 단계별로 구축하는 방법을 설명합니다.
 
-### 1.1 Java 설치
+> **목차 (원본 README의 목차와 실제 내용의 순서를 모두 반영함)**
+>
+> 1. PostgreSQL 설치 및 설정
+> 2. Hadoop 설치 및 설정
+> 3. 필요한 라이브러리 설치
+> 4. Kafka 설치 및 실행
+> 5. Airflow로 배치
+
+---
+
+## 1. PostgreSQL 설치 및 설정
+
+### 1.1. PostgreSQL 설치 (Linux - Ubuntu)
+
+1. **PostgreSQL 설치**  
+   터미널에서 아래 명령어를 실행하여 PostgreSQL과 추가 패키지를 설치합니다.
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install postgresql postgresql-contrib
+   ```
+
+2. **서비스 상태 확인**  
+   PostgreSQL 서비스가 정상 실행 중인지 확인합니다.
+
+   ```bash
+   sudo service postgresql status
+   ```
+
+### 1.2. PostgreSQL 데이터베이스 설정
+
+1. **PostgreSQL 접속**  
+   기본 사용자 `postgres`로 전환한 후 `psql` 셸에 접속합니다.
+
+   ```bash
+   sudo -i -u postgres
+   psql
+   ```
+
+2. **데이터베이스 생성**  
+   `news` 데이터베이스를 생성합니다.
+
+   ```sql
+   CREATE DATABASE news;
+   ```
+
+3. **사용자 생성 및 권한 부여**  
+   SSAFY 전용 사용자 `ssafyuser`를 생성하고, `news` 데이터베이스에 대한 모든 권한을 부여합니다.
+
+   ```sql
+   CREATE USER ssafyuser WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE news TO ssafyuser;
+   ```
+
+4. **테이블 생성**
+
+   1. **데이터베이스 변경**  
+      생성한 `news` 데이터베이스로 접속합니다.
+
+      ```bash
+      \c news
+      ```
+
+   2. **pgvector 확장 설치 (최초 한 번 실행) 및 테이블 생성**  
+      아래 SQL 명령어를 실행하여 `pgvector` 확장을 설치하고, `news_article` 테이블을 생성합니다.
+
+      ```sql
+      -- pgvector 확장이 필요한 경우 (최초 한 번만 실행)
+      CREATE EXTENSION IF NOT EXISTS vector;
+
+      -- news_article 테이블 생성
+      CREATE TABLE news_article (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(200) NOT NULL,
+          writer VARCHAR(255) NOT NULL,
+          write_date TIMESTAMP NOT NULL,
+          category VARCHAR(50) NOT NULL,
+          content TEXT NOT NULL,
+          url VARCHAR(200) UNIQUE NOT NULL,
+          keywords JSON DEFAULT '[]'::json,
+          embedding VECTOR(1536) NOT NULL
+      );
+      ```
+
+---
+
+## 2. Hadoop 설치 및 설정
+
+Hadoop을 통해 HDFS (분산 파일 시스템)를 설정하여 데이터를 저장하고 관리할 수 있습니다.
+
+### 2.1. Java 설치
+
+Hadoop 실행에 필요한 Java를 설치합니다.
 
 ```bash
 sudo apt-get update
 sudo apt-get install default-jdk
 ```
 
-### 1.2 Hadoop 다운로드 및 설치
+### 2.2. Hadoop 다운로드 및 설치
 
-```bash
-wget https://downloads.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz
-tar -xzvf hadoop-3.4.0.tar.gz
-sudo mv hadoop-3.4.0 /usr/local/hadoop
-```
+1. Hadoop 3.4.0을 다운로드합니다.
 
-### 1.3 Hadoop 환경 변수 설정
+   ```bash
+   wget https://downloads.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz
+   ```
 
-~/.bashrc 파일에 추가:
+2. 다운로드한 tar.gz 파일을 압축 해제한 후, `/usr/local/hadoop` 디렉토리로 이동합니다.
+
+   ```bash
+   tar -xzvf hadoop-3.4.0.tar.gz
+   sudo mv hadoop-3.4.0 /usr/local/hadoop
+   ```
+
+### 2.3. Hadoop 환경 변수 설정
+
+사용자 홈 디렉토리의 `~/.bashrc` 파일에 아래 환경 변수를 추가합니다.
 
 ```bash
 # Hadoop Setting
@@ -30,19 +129,23 @@ export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 export PATH=$PATH:$JAVA_HOME/bin
 ```
 
-변경사항 적용:
+변경 사항을 적용합니다.
 
 ```bash
 source ~/.bashrc
 ```
 
-### 1.4 Hadoop 설정 파일 수정
+### 2.4. Hadoop 설정 파일 수정
 
-#### core-site.xml 설정
+#### (1) core-site.xml 설정
+
+아래 명령어로 파일을 열어 수정합니다.
 
 ```bash
 nano $HADOOP_HOME/etc/hadoop/core-site.xml
 ```
+
+파일에 다음 내용을 입력합니다.
 
 ```xml
 <configuration>
@@ -53,13 +156,14 @@ nano $HADOOP_HOME/etc/hadoop/core-site.xml
 </configuration>
 ```
 
-#### hdfs-site.xml 설정
+#### (2) hdfs-site.xml 설정
+
+파일을 열어 아래 내용을 입력합니다.  
+**주의:** `dfs.namenode.name.dir`와 `dfs.datanode.data.dir`의 경로에 있는 `사용자이름` 부분은 본인의 리눅스 사용자 이름으로 변경하세요.
 
 ```bash
 nano $HADOOP_HOME/etc/hadoop/hdfs-site.xml
 ```
-
-- 사용자이름 부분에 본인의 리눅스 사용자 이름을 입력하세요.
 
 ```xml
 <configuration>
@@ -78,322 +182,260 @@ nano $HADOOP_HOME/etc/hadoop/hdfs-site.xml
 </configuration>
 ```
 
-### 1.5 SSH 설정
+### 2.5. SSH 설정
+
+Hadoop 클러스터 환경에서 SSH가 필요하므로 SSH 서버를 설치합니다.
 
 ```bash
 sudo apt-get install openssh-server
 ```
 
-### 1.6 JAVA_HOME 설정
+### 2.6. JAVA_HOME 설정 (Hadoop용)
+
+Hadoop 환경 설정 파일을 열어 JAVA_HOME 경로를 지정합니다.
 
 ```bash
 nano $HADOOP_HOME/etc/hadoop/hadoop-env.sh
 ```
 
+파일 내에 아래 내용을 추가하거나 수정합니다.
+
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/
 ```
 
-### 1.7 HDFS 데이터 디렉토리 생성
+### 2.7. HDFS 데이터 디렉토리 생성
+
+Hadoop이 데이터를 저장할 디렉토리를 생성합니다.
 
 ```bash
 mkdir -p ~/hadoopdata/hdfs/namenode
 mkdir -p ~/hadoopdata/hdfs/datanode
 ```
 
-### 1.8 HDFS 포맷
+### 2.8. HDFS 포맷
+
+이전 단계에서 생성한 이름노드 디렉토리를 포맷합니다.
 
 ```bash
 hdfs namenode -format
 ```
 
-### 1.9 HDFS 데몬 시작
+### 2.9. HDFS 데몬 시작
+
+HDFS 관련 데몬을 시작합니다.
 
 ```bash
 start-dfs.sh
 ```
 
-#### 1.9.1 데몬 실행 확인
+#### 2.9.1. 데몬 실행 확인
+
+다음 명령어로 실행 중인 Java 프로세스를 확인하여 `NameNode`, `DataNode`, `SecondaryNameNode`가 실행 중인지 확인합니다.
 
 ```bash
 jps
 ```
 
-`NameNode`, `DataNode`, `SecondaryNameNode`가 실행 중인지 확인합니다.
+### 2.10. HDFS 사용해보기
 
-### 1.10 HDFS 사용해보기
+#### 2.10.1. 디렉토리 생성
 
-#### 1.10.1 디렉토리 생성
+HDFS 내에 사용자 디렉토리를 생성합니다.
 
 ```bash
 hdfs dfs -mkdir /user
 hdfs dfs -mkdir /user/사용자이름
 ```
 
-#### 1.10.2 파일 목록 확인
+#### 2.10.2. 파일 목록 확인
+
+생성한 디렉토리 내의 파일 목록을 확인합니다.
 
 ```bash
 hdfs dfs -ls /user/사용자이름/
 ```
 
-### 1.11 HDFS 데몬 종료
+### 2.11. HDFS 데몬 종료
+
+HDFS 데몬을 종료합니다.
 
 ```bash
 stop-dfs.sh
 ```
 
-## 2. Spark 설치 및 설정
+---
 
-### 2.1 Spark 다운로드 및 설치
+## 3. 필요한 라이브러리 설치
 
-1. Apache Spark 공식 사이트에서 파일 다운로드
-2. 압축 해제 및 설치:
+프로젝트에서는 [Poetry](https://python-poetry.org/)를 이용하여 파이썬 라이브러리를 관리합니다.
 
-```bash
-tar xvzf spark-3.5.3-bin-hadoop3.tgz
-sudo mv spark-3.5.3-bin-hadoop3 /usr/local/spark
-```
+1. **Poetry 설치 (필요한 경우)**
 
-### 2.2 Spark 환경 변수 설정
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
 
-~/.bashrc 파일에 추가:
+2. **의존성 설치**
 
-```bash
-# Spark Setting
-export SPARK_HOME=/usr/local/spark
-export PATH=$PATH:$SPARK_HOME/bin
-```
+   ```bash
+   poetry install
+   ```
 
-변경사항 적용:
+3. **가상환경 활성화**
 
-```bash
-source ~/.bashrc
-```
+   ```bash
+   poetry shell
+   ```
 
-## 3. 프로젝트 의존성 관리
+---
 
-Poetry를 사용하여 프로젝트 의존성을 관리합니다.
+## 4. Kafka 설치 및 실행
 
-```bash
-# Poetry 설치 (필요한 경우)
-curl -sSL https://install.python-poetry.org | python3 -
+Kafka는 Docker 컨테이너를 이용하여 실행합니다.
 
-# 의존성 설치
-poetry install
+### 4.1. Docker 설치
 
-# 가상환경 활성화
-poetry shell
-```
+Kafka 실행을 위해 Docker를 설치합니다.  
+자세한 내용은 [Docker 설치 가이드 (Ubuntu)](https://docs.docker.com/engine/install/ubuntu/)를 참고하세요.
 
-## 4. 실행 순서
+### 4.2. Kafka 실행
 
-### 4.1 Spark Streaming 서버 실행
+1. **Kafka 디렉토리로 이동**  
+   터미널에서 Kafka 관련 파일이 위치한 디렉토리로 이동합니다.
 
-# 뉴스 데이터 실시간 ETL 파이프라인
+   ```bash
+   cd kafka
+   ```
 
-## 전체 데이터 흐름도
+2. **Docker Compose를 이용해 Kafka 실행**
 
-```
-[Extract]                [Transform]                    [Load]
-원본 데이터  →  HDFS  →  Spark Streaming 처리  →  REST API 엔드포인트
-(JSON)      (임시저장)   (데이터 정제/가공)        (최종 적재)
-                ↓
-            아카이브
-```
+   ```bash
+   sudo docker compose up -d
+   ```
 
-## 1. Extract (데이터 추출)
+3. **Docker 컨테이너 상태 확인**
 
-### crawling.py
+   ```bash
+   sudo docker ps
+   ```
 
-- 현재는 기존 제공된 JSON 파일에서 데이터를 읽어오지만, 다음과 같은 다양한 방식으로 데이터 수집이 가능합니다:
-  - 웹 크롤링을 통한 실시간 뉴스 수집
-  - RSS 피드를 통한 뉴스 구독
-  - 뉴스 API 활용 (예: 네이버/카카오 뉴스 API)
-  - 외부 뉴스 데이터베이스 연동
-  - 실시간 SNS 데이터 수집
+### 4.3. Kafka 관련 Python 스크립트 실행
 
-#### 데이터 소스
+Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인을 테스트할 수 있습니다.
 
-```python
-base_directory = 'training_raw_data'
-hdfs_path = '/user/news/realtime/'
-```
+- **Consumer 실행**  
+  Kafka로부터 메시지를 소비하는 스크립트를 실행합니다.
 
-#### 추출 프로세스
+  ```bash
+  # Consumer를 위한 screen 생성 및 실행
+  screen -S kafka-consumer
+  python consumer/flink_kafka_consumer.py
+  ```
 
-1. HDFS 디렉토리 생성 및 권한 부여
+  스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
 
-```bash
-hdfs dfs -mkdir -p /user/news/realtime
-hdfs dfs -chmod -R 777 /user/news/realtime
-```
+- **Producer 실행**  
+  RSS 피드 데이터를 Kafka로 전송하는 스크립트를 실행합니다.
 
-2. JSON 파일 읽기
+  ```bash
+  # Producer를 위한 screen 생성 및 실행
+  screen -S kafka-producer
+  python producer/rss_kafka_producer.py
+  ```
 
-   - 카테고리별 디렉토리 순회
-   - 각 카테고리당 최대 10개 파일 처리
+  스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
 
-3. HDFS 임시 저장
-   - 1초 간격으로 데이터 전송
-   - 파일명: `news_YYYYMMDD_HHMMSS.json`
+---
 
-## 2. Transform (데이터 변환)
+## 5. Airflow로 배치
 
-### spark_streaming_server.py
+Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한 내용은 [Airflow 공식 문서](https://airflow.apache.org/docs/apache-airflow/stable/start.html)를 참고하세요.
 
-#### 스키마 정의
+1. **Poetry 가상환경 활성화**
 
-```python
-StructType([
-    StructField("title", StringType()),        # 뉴스 제목
-    StructField("source_site", StringType()),  # 출처
-    StructField("write_date", StringType()),   # 작성일
-    StructField("content", StringType()),      # 본문
-    StructField("url", StringType())           # 링크
-])
-```
+   ```bash
+   poetry shell
+   ```
 
-#### 변환 프로세스
+2. **AIRFLOW_HOME 환경 변수 설정**  
+   Airflow 작업 디렉토리를 설정합니다. \*실제 경로를 넣으셔야 합니다.
 
-1. **데이터 전처리**
+   ```bash
+   echo 'export AIRFLOW_HOME=/home/jiwoochris/projects/ssafy-custom-news-data/batch' >> ~/.bashrc
+   source ~/.bashrc
+   ```
 
-```python
-def preprocess_content(content):
-    # 텍스트 길이 제한 (5000 토큰)
-    # 토큰화 및 디코딩
-```
+3. **Airflow 설치**
 
-2. **특성 추출**
+   아래 스크립트는 Airflow 버전 2.10.4를 설치하는 예시입니다.
 
-   - 키워드 추출 (GPT-4)
-   - 텍스트 임베딩 생성
-   - 카테고리 자동 분류
+   ```bash
+   AIRFLOW_VERSION=2.10.4
 
-3. **데이터 정제**
-   - 필드명 변경 (source_site → writer)
-   - 불필요 필드 제거
-   - 누락 데이터 처리
+   # 현재 사용 중인 Python 버전 자동 추출 (지원되지 않는 버전을 사용 중이면 직접 설정)
+   PYTHON_VERSION="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
-## 3. Load (데이터 적재)
+   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+   # 예: Python 3.8을 사용하는 경우 constraints URL 예: https://raw.githubusercontent.com/apache/airflow/constraints-2.10.4/constraints-3.8.txt
 
-### spark_streaming_server.py
+   pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
+   ```
 
-#### HDFS 디렉토리 생성
+4. **Airflow Spark Provider 설치**
 
-```bash
-# 아카이브용 디렉토리 생성 및 권한 부여
-hdfs dfs -mkdir -p /news_archive
-hdfs dfs -chmod -R 777 /news_archive
-```
+   Kafka 등과 연동하여 Spark 작업을 수행하기 위해 provider를 설치합니다.
 
-#### 데이터베이스 적재
+   ```bash
+   pip install apache-airflow-providers-apache-spark
+   ```
 
-```python
-# 전처리된 데이터를 서버 DB에 적재
-# TARGET_ENDPOINT는 데이터를 적재할 REST API 엔드포인트를 나타냅니다.
-# 주의: 해당 백엔드 서버가 실행 중인 상태여야 합니다.
-TARGET_ENDPOINT = "http://localhost:8000/write-article/"
-```
+5. **Airflow 설정 파일 수정**
 
-#### 적재 프로세스
+   Airflow 설정 파일(batch/airflow.cfg)을 열어 dags_folder 경로를 수정합니다.
 
-1. 전처리된 데이터 JSON 변환
-2. write-article API 호출하여 DB 저장
-3. 원본 데이터는 HDFS의 /news_archive에 보관
-4. 적재 상태 모니터링 및 로깅
+   ```bash
+   dags_folder = /home/jiwoochris/projects/ssafy-custom-news-data/batch/dags
+   ```
 
-### 주요 기능 및 특징
+   batch/dags/daily_report_dag.py 파일에서 아래 부분을 찾아서 올바른 경로로 수정합니다.
 
-### 1. 데이터 저장 및 품질 관리
+   ```
+   'python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
+   ```
 
-- 전처리 데이터는 서버 DB에, 원본은 HDFS에 저장
-- API 요청/응답 검증 및 DB 적재 상태 모니터링
-- 데이터 정합성 검증 및 누락 데이터 처리
+   수정 후 저장합니다.
 
-### 2. 시스템 안정성
+6. **Airflow 실행**
 
-- REST API 기반 확장 가능한 아키텍처
-- 체계적인 에러 처리 및 재시도 메커니즘
-- 모듈화된 프로세스로 유지보수 용이
+   screen을 생성하고 Airflow를 standalone 모드로 실행합니다.
 
-### 3. AI 처리 결과 관리
+   ```bash
+   # screen 생성
+   screen -S airflow
 
-- 키워드 추출, 임베딩, 자동 분류 결과 저장
-- AI 모델 결과의 DB 적재 및 품질 관리
+   # Airflow 실행
+   airflow standalone
 
-## 구성 요소별 연결
+   # screen 세션 분리 (Ctrl+A, D)
+   ```
 
-```
-[crawling.py] → HDFS(/user/news/realtime)
-                      ↓
-[spark_streaming_server.py] → 데이터 처리
-                      ↓
-                REST API 엔드포인트
-                      ↓
-              아카이브(/news_archive)
-```
+7. **DAG 확인**
 
-이 ETL 파이프라인은 뉴스 데이터를 실시간으로 추출(Extract), 변환(Transform), 적재(Load)하는 시스템으로, 데이터의 수집부터 최종 저장까지의 전체 과정을 자동화하여 처리합니다.
+   Airflow 웹 UI에서 DAG를 확인할 수 있습니다.
 
-## ML 파이프라인 구성(archive 하는 이유)
+   ```bash
+   # 기본 접속 정보
+   # URL: http://localhost:8080
+   # Username: admin
+   # Password: 터미널에 출력된 비밀번호 확인
+   ```
 
-### 1. 데이터 아카이브 활용
+   daily_report_dag가 정상적으로 등록되었는지 확인하고, 필요한 경우 활성화합니다.
 
-#### 저장 위치
+---
 
-- HDFS `/news_archive`
+## 마무리
 
-#### 데이터 특징
-
-- 원본 뉴스 데이터
-- GPT 기반 레이블링 데이터 (키워드, 카테고리)
-- 임베딩 벡터
-
-#### 용도
-
-- 자체 ML 모델 학습을 위한 학습 데이터셋 구축
-
-### 2. Batch 학습 파이프라인
-
-#### 주기적 학습 수행
-
-- 주기적으로 새로운 데이터 반영
-
-#### 학습 대상 모델
-
-1. 키워드 추출 모델
-
-   - GPT 레이블링 데이터 기반
-   - 도메인 특화 키워드 추출기 학습
-
-2. 임베딩 모델
-
-   - 뉴스 도메인 특화 임베딩 생성
-   - 기존 임베딩 모델 파인튜닝
-
-3. 카테고리 분류 모델
-   - GPT 레이블링 기반 지도학습
-   - 뉴스 특화 분류체계 적용
-
-### 5. ETL과 ML 파이프라인 통합
-
-```
-[ETL 파이프라인]
-데이터 수집 → 전처리 → 임시저장 → 변환 → 적재
-     │           │                          │
-     └→ [아카이브] ←─────────────────────┘
-            │
-[ML 파이프라인]
-            │
-     모델 학습 → 평가 → 배포 → 서빙
-            ↑                    │
-            └──── 피드백 ←──────┘
-```
-
-이러한 ML 파이프라인을 통해 초기 GPT 기반의 레이블링 데이터를 활용하여 자체 모델을 발전시키고, 지속적인 학습과 개선이 가능한 시스템을 구축할 수 있습니다.
-
-### 6. 대시보드 - 실시간 데이터 모니터링 및 시각화
-
-- 위 ETL 프로세스에서 데이터 적재를 Parquet 파일 기반의 로컬 저장소에 하게 되었을 때
-- dashboard.py에서 실시간으로 데이터 시각화도 구현되어있습니다.
-- ETL 파이프라인의 결과를 실시간으로 모니터링하고 시각화할 수 있습니다.
+위의 단계들을 차례대로 진행하면 SSAFY 맞춤형 뉴스 데이터 파이프라인 환경이 PostgreSQL, Hadoop, Kafka, Python 라이브러리 관리 (Poetry), 그리고 Airflow를 이용해 성공적으로 구축됩니다.  
+문제가 발생하거나 추가적인 도움이 필요하면 관련 문서를 참고하거나 담당자에게 문의하시기 바랍니다.

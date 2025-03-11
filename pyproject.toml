@@ -5,14 +5,20 @@ description = ""
 authors = ["jiwoochris <travelandi01@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
-pyspark = "^3.5.3"
+python = ">=3.10,<3.12"
+feedparser = "^6.0.11"
+kafka-python = "^2.0.2"
+apache-flink = "^1.20.0"
+beautifulsoup4 = "^4.13.3"
+pydantic = "^2.10.6"
+psycopg2 = "^2.9.10"
+openai = "^1.61.1"
+python-dotenv = "^1.0.1"
+tiktoken = "^0.8.0"
+pyspark = "^3.5.4"
+matplotlib = "^3.10.0"
 hdfs = "^2.7.3"
-streamlit = "^1.39.0"
-matplotlib = "^3.9.2"
-plotly = "^5.24.1"
-wordcloud = "^1.9.3"
-nltk = "^3.9.1"
+elasticsearch = "^8.17.1"
 
 [tool.poetry.dev-dependencies]
 
