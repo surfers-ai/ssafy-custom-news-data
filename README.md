@@ -86,6 +86,8 @@
       );
       ```
 
+   exit을 통해 터미널을 나올 수 있습니다.
+
 ---
 
 ## 2. Hadoop 설치 및 설정
@@ -305,7 +307,7 @@ Kafka 실행을 위해 Docker를 설치합니다.
    터미널에서 Kafka 관련 파일이 위치한 디렉토리로 이동합니다.
 
    ```bash
-   cd kafka
+   cd kafka-es
    ```
 
 2. **Docker Compose를 이용해 Kafka 실행**
@@ -329,7 +331,7 @@ Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인
 
   ```bash
   # Consumer를 위한 screen 생성 및 실행
-  screen -S kafka-consumer
+  screen -S consumer
   python consumer/flink_kafka_consumer.py
   ```
 
@@ -345,6 +347,49 @@ Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인
   ```
 
   스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
+
+### 4.4. Elasticsearch와 Kibana 설정
+
+Elasticsearch와 Kibana는 Kafka와 함께 Docker Compose를 통해 실행됩니다.
+
+1. **환경 변수 설정**  
+   `.env` 파일에 Elasticsearch 접속 정보를 추가합니다:
+
+   ```bash
+   ES_URL=http://localhost:9200
+   ```
+
+2. **Elasticsearch 상태 확인**  
+   Elasticsearch가 정상적으로 실행 중인지 확인합니다:
+
+   ```bash
+   curl http://localhost:9200
+   ```
+
+3. **Kibana 접속**  
+   Kibana 대시보드에 접속하여 Elasticsearch 데이터를 시각화할 수 있습니다:
+
+   ```
+   http://localhost:5601
+   ```
+
+4. **문제 해결**  
+   만약 연결 오류가 발생한다면:
+   - Docker 컨테이너 상태 확인:
+     ```bash
+     docker ps | grep elasticsearch
+     docker ps | grep kibana
+     ```
+   - 로그 확인:
+     ```bash
+     docker logs elasticsearch
+     docker logs kibana
+     ```
+   - 컨테이너 재시작:
+     ```bash
+     docker restart elasticsearch kibana
+     ```
+   - 메모리 설정 확인: docker-compose.yml의 ES_JAVA_OPTS가 호스트 시스템의 가용 메모리에 적절한지 확인
 
 ---
 

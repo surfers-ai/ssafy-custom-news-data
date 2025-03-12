@@ -207,8 +207,10 @@ def main():
     # Flink 스트리밍 환경 생성
     env = StreamExecutionEnvironment.get_execution_environment()
 
+    kafka_connector_path = os.getenv("KAFKA_CONNECTOR_PATH")
+
     # Kafka connector Jar 파일 경로 설정 (절대 경로, file:// 포함)
-    env.add_jars(f"file://{os.getenv("KAFKA_CONNECTOR_PATH")}")
+    env.add_jars(f"file://{kafka_connector_path}")
 
     # Kafka consumer properties 설정
     kafka_props = {
