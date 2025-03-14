@@ -145,7 +145,8 @@ class DBInsertionMapFunction(MapFunction):
                 json.dumps(keywords, ensure_ascii=False),
                 embedding_str
             ))
-            db_id = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            db_id = result[0] if result else None
             print(f"Successfully saved article to Postgresql, id: {db_id}")
         except Exception as e:
             print("DB insertion error:", e)
