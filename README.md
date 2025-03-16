@@ -181,6 +181,10 @@ nano $HADOOP_HOME/etc/hadoop/hdfs-site.xml
     <name>dfs.datanode.data.dir</name>
     <value>file:///home/사용자이름/hadoopdata/hdfs/datanode</value>
   </property>
+  <property>
+    <name>dfs.webhdfs.enabled</name>
+    <value>true</value>
+</property>
 </configuration>
 ```
 
@@ -265,6 +269,13 @@ HDFS 데몬을 종료합니다.
 ```bash
 stop-dfs.sh
 ```
+
+### 2.12 환경변수 설정
+   `.env` 파일에 HDFS 접속 정보를 추가합니다:
+
+   ```bash
+   HDFS_URL=http://localhost:9870
+   ```
 
 ---
 
