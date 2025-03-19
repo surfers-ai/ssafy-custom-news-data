@@ -17,9 +17,6 @@ from dotenv import load_dotenv
 
 from preprocessing import transform_classify_category, transform_extract_keywords, transform_to_embedding
 
-# HDFS 클라이언트 관련 모듈
-from hdfs import InsecureClient
-
 # .env 파일에 필요한 설정이 있다면 로드합니다.
 load_dotenv()
 
@@ -56,7 +53,7 @@ def process_message(json_str: str) -> NewsArticle:
 
 class DBInsertionMapFunction(MapFunction):
     """
-    DB에 뉴스 기사를 저장하고 HDFS에 파일로 기록하는 함수.
+    DB에 뉴스 기사를 저장하는 함수.
     RichMapFunction을 사용할 수 없는 경우, MapFunction과 lazy initialization을 이용합니다.
     """
     def __init__(self):
@@ -65,7 +62,7 @@ class DBInsertionMapFunction(MapFunction):
 
     def _initialize(self):
         """
-        DB 연결 및 HDFS 클라이언트를 초기화합니다.
+        DB 연결을 초기화합니다.
         이 메서드는 워커에서 최초 호출 시 한 번 실행됩니다.
         """
         # PostgreSQL DB 연결
@@ -77,10 +74,6 @@ class DBInsertionMapFunction(MapFunction):
             password=os.getenv("DB_PASSWORD")     # 비밀번호
         )
         self._db_conn.autocommit = True
-
-        # HDFS 클라이언트 초기화
-        self.hdfs_client = InsecureClient(os.getenv('HDFS_URL'), user=os.getenv('HDFS_USER'))
-        self.hdfs_path = '/user/news/realtime/'  # HDFS 내 데이터 저장 경로
 
         # Elasticsearch 클라이언트 초기화
         self.es = Elasticsearch([os.getenv("ES_URL")])
@@ -173,34 +166,6 @@ class DBInsertionMapFunction(MapFunction):
             except Exception as e:
                 print("Elasticsearch indexing error:", e)
 
-        # HDFS에 파일 저장
-        safe_title = "".join(c for c in article.title[:50] if c.isalnum() or c in (' ', '-', '_')).replace(" ", "_")
-        filename = f"{write_date.strftime('%Y%m%d')}_{safe_title}.json"
-        # hdfs_path가 '/'로 끝나지 않을 경우 보정
-        if not self.hdfs_path.endswith("/"):
-            hdfs_file_path = self.hdfs_path + "/" + filename
-        else:
-            hdfs_file_path = self.hdfs_path + filename
-
-        data_to_save = {
-            "title": article.title,
-            "writer": writer,
-            "write_date": write_date.isoformat(),
-            "category": category,
-            "content": content,
-            "link": article.link,
-            "keywords": json.dumps(keywords),
-            "embedding": embedding_str
-        }
-        json_data = json.dumps(data_to_save, ensure_ascii=False, indent=2)
-        try:
-            with self.hdfs_client.write(hdfs_file_path, encoding='utf-8') as writer_obj:
-                writer_obj.write(json_data)
-            print(f"Successfully saved article to HDFS: {hdfs_file_path}")
-        except Exception as e:
-            print("HDFS file save error:", e)
-
-
         return article  # 체인 연산을 위해 반환
 
 
@@ -232,7 +197,7 @@ def main():
     # 메시지를 NewsArticle 모델로 변환
     processed_stream = stream.map(process_message)
 
-    # DB 삽입 및 HDFS 저장 로직을 MapFunction으로 실행
+    # DB 삽입 로직을 MapFunction으로 실행
     processed_stream = processed_stream.map(DBInsertionMapFunction())
 
     # 디버그를 위해 처리 결과를 콘솔에 출력 (원하는 경우 주석 처리 가능)
