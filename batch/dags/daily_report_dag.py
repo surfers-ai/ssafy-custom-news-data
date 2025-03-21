@@ -25,9 +25,7 @@ with DAG(
     data_sync_job = BashOperator(
         task_id='hourly_data_sync',
         bash_command=(
-            'echo "postgresql - es 싱크 시작" && '
-            'poetry run python /home/honuuk/ssafy-custom-news-data/batch/posgresql_es_sync.py &&'
-            'echo "postgresql - es 싱크 완료"'
+            'echo "airflow 실행"'
         )
     )
 

@@ -12,7 +12,6 @@ from pyflink.datastream.connectors import FlinkKafkaConsumer
 from pyflink.datastream.functions import MapFunction
 
 import psycopg2
-from elasticsearch import Elasticsearch
 from dotenv import load_dotenv
 
 from preprocessing import transform_classify_category, transform_extract_keywords, transform_to_embedding
@@ -75,14 +74,6 @@ class DBInsertionMapFunction(MapFunction):
         )
         self._db_conn.autocommit = True
 
-        # Elasticsearch 클라이언트 초기화
-        self.es = Elasticsearch([os.getenv("ES_URL")])
-        if not self.es.ping():
-            raise ValueError("Elasticsearch에 연결할 수 없습니다.")
-
-        if not self.es.indices.exists(index="news"):
-            self.es.indices.create(index="news")
-
         self._initialized = True
 
     def map(self, article: NewsArticle) -> NewsArticle:
@@ -119,9 +110,7 @@ class DBInsertionMapFunction(MapFunction):
             embedding_str = json.dumps([])
 
         # PostgreSQL에 기사 삽입
-        # db에 저장된 id를 Elastic Search에도 저장하기 위해 RETURING id 쿼리 추가
         cursor = self._db_conn.cursor()
-        db_id = None
         try:
             cursor.execute("""
                 INSERT INTO mynews_article (title, writer, write_date, category, content, url, keywords, embedding)
@@ -138,33 +127,12 @@ class DBInsertionMapFunction(MapFunction):
                 json.dumps(keywords, ensure_ascii=False),
                 embedding_str
             ))
-            result = cursor.fetchone()
-            db_id = result[0] if result else None
             print(f"Successfully saved article to Postgresql, id: {db_id}")
         except Exception as e:
             print("DB insertion error:", e)
         finally:
             cursor.close()
 
-        # DB에 저장 성공한 경우에만 Elasticsearch에 기사 저장
-        if db_id is not None:
-            es_data = {
-                "id": db_id,
-                "title": article.title,
-                "writer": writer,
-                "write_date": write_date.isoformat(),
-                "category": category,
-                "content": content,
-                "url": article.link,
-                "keywords": keywords,
-                "embedding": embedding,
-            }
-
-            try:
-                self.es.index(index="news", document=es_data)
-                print(f"Successfully indexed article in Elasticsearch: {article.title}")
-            except Exception as e:
-                print("Elasticsearch indexing error:", e)
 
         return article  # 체인 연산을 위해 반환
 
