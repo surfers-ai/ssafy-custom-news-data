@@ -1,14 +1,13 @@
 # SSAFY 맞춤형 뉴스 데이터 파이프라인 환경 설정 가이드 정리
 
-이 가이드는 **PostgreSQL**, **Hadoop**, **Kafka**, **Python 라이브러리 관리 (Poetry)**, 그리고 **Airflow**를 이용하여 SSAFY 맞춤형 뉴스 데이터 파이프라인 환경을 단계별로 구축하는 방법을 설명합니다.
+이 가이드는 **PostgreSQL**, **Kafka**, **Python 라이브러리 관리 (Poetry)**, 그리고 **Airflow**를 이용하여 SSAFY 맞춤형 뉴스 데이터 파이프라인 환경을 단계별로 구축하는 방법을 설명합니다.
 
 > **목차 (원본 README의 목차와 실제 내용의 순서를 모두 반영함)**
 >
 > 1. PostgreSQL 설치 및 설정
-> 2. Hadoop 설치 및 설정
-> 3. 필요한 라이브러리 설치
-> 4. Kafka 설치 및 실행
-> 5. Airflow로 배치
+> 2. 필요한 라이브러리 설치
+> 3. Kafka 설치 및 실행
+> 4. Airflow로 배치
 
 ---
 
@@ -90,196 +89,7 @@
 
 ---
 
-## 2. Hadoop 설치 및 설정
-
-Hadoop을 통해 HDFS (분산 파일 시스템)를 설정하여 데이터를 저장하고 관리할 수 있습니다.
-
-### 2.1. Java 설치
-
-Hadoop 실행에 필요한 Java를 설치합니다.
-
-```bash
-sudo apt-get update
-sudo apt-get install default-jdk
-```
-
-### 2.2. Hadoop 다운로드 및 설치
-
-1. Hadoop 3.4.0을 다운로드합니다.
-
-   ```bash
-   wget https://downloads.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz
-   ```
-
-2. 다운로드한 tar.gz 파일을 압축 해제한 후, `/usr/local/hadoop` 디렉토리로 이동합니다.
-
-   ```bash
-   tar -xzvf hadoop-3.4.0.tar.gz
-   sudo mv hadoop-3.4.0 /usr/local/hadoop
-   ```
-
-### 2.3. Hadoop 환경 변수 설정
-
-사용자 홈 디렉토리의 `~/.bashrc` 파일에 아래 환경 변수를 추가합니다.
-
-```bash
-# Hadoop Setting
-export HADOOP_HOME=/usr/local/hadoop
-export PATH=$PATH:$HADOOP_HOME/bin
-export PATH=$PATH:$HADOOP_HOME/sbin
-export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-export PATH=$PATH:$JAVA_HOME/bin
-```
-
-변경 사항을 적용합니다.
-
-```bash
-source ~/.bashrc
-```
-
-### 2.4. Hadoop 설정 파일 수정
-
-#### (1) core-site.xml 설정
-
-아래 명령어로 파일을 열어 수정합니다.
-
-```bash
-nano $HADOOP_HOME/etc/hadoop/core-site.xml
-```
-
-파일에 다음 내용을 입력합니다.
-
-```xml
-<configuration>
-    <property>
-        <name>fs.defaultFS</name>
-        <value>hdfs://localhost:9000</value>
-    </property>
-</configuration>
-```
-
-#### (2) hdfs-site.xml 설정
-
-파일을 열어 아래 내용을 입력합니다.  
-**주의:** `dfs.namenode.name.dir`와 `dfs.datanode.data.dir`의 경로에 있는 `사용자이름` 부분은 본인의 리눅스 사용자 이름으로 변경하세요.
-
-```bash
-nano $HADOOP_HOME/etc/hadoop/hdfs-site.xml
-```
-
-```xml
-<configuration>
-  <property>
-    <name>dfs.replication</name>
-    <value>1</value>
-  </property>
-  <property>
-    <name>dfs.namenode.name.dir</name>
-    <value>file:///home/사용자이름/hadoopdata/hdfs/namenode</value>
-  </property>
-  <property>
-    <name>dfs.datanode.data.dir</name>
-    <value>file:///home/사용자이름/hadoopdata/hdfs/datanode</value>
-  </property>
-  <property>
-    <name>dfs.webhdfs.enabled</name>
-    <value>true</value>
-</property>
-</configuration>
-```
-
-### 2.5. SSH 설정
-
-Hadoop 클러스터 환경에서 SSH가 필요하므로 SSH 서버를 설치합니다.
-
-```bash
-sudo apt-get install openssh-server
-```
-
-### 2.6. JAVA_HOME 설정 (Hadoop용)
-
-Hadoop 환경 설정 파일을 열어 JAVA_HOME 경로를 지정합니다.
-
-```bash
-nano $HADOOP_HOME/etc/hadoop/hadoop-env.sh
-```
-
-파일 내에 아래 내용을 추가하거나 수정합니다.
-
-```bash
-export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/
-```
-
-### 2.7. HDFS 데이터 디렉토리 생성
-
-Hadoop이 데이터를 저장할 디렉토리를 생성합니다.
-
-```bash
-mkdir -p ~/hadoopdata/hdfs/namenode
-mkdir -p ~/hadoopdata/hdfs/datanode
-```
-
-### 2.8. HDFS 포맷
-
-이전 단계에서 생성한 이름노드 디렉토리를 포맷합니다.
-
-```bash
-hdfs namenode -format
-```
-
-### 2.9. HDFS 데몬 시작
-
-HDFS 관련 데몬을 시작합니다.
-
-```bash
-start-dfs.sh
-```
-
-#### 2.9.1. 데몬 실행 확인
-
-다음 명령어로 실행 중인 Java 프로세스를 확인하여 `NameNode`, `DataNode`, `SecondaryNameNode`가 실행 중인지 확인합니다.
-
-```bash
-jps
-```
-
-### 2.10. HDFS 사용해보기
-
-#### 2.10.1. 디렉토리 생성
-
-HDFS 내에 사용자 디렉토리를 생성합니다.
-
-```bash
-hdfs dfs -mkdir /user
-hdfs dfs -mkdir /user/사용자이름
-```
-
-#### 2.10.2. 파일 목록 확인
-
-생성한 디렉토리 내의 파일 목록을 확인합니다.
-
-```bash
-hdfs dfs -ls /user/사용자이름/
-```
-
-### 2.11. HDFS 데몬 종료
-
-HDFS 데몬을 종료합니다.
-
-```bash
-stop-dfs.sh
-```
-
-### 2.12 환경변수 설정
-   `.env` 파일에 HDFS 접속 정보를 추가합니다:
-
-   ```bash
-   HDFS_URL=http://localhost:9870
-   ```
-
----
-
-## 3. 필요한 라이브러리 설치
+## 2. 필요한 라이브러리 설치
 
 프로젝트에서는 [Poetry](https://python-poetry.org/)를 이용하여 파이썬 라이브러리를 관리합니다.
 
@@ -303,16 +113,16 @@ stop-dfs.sh
 
 ---
 
-## 4. Kafka 설치 및 실행
+## 3. Kafka 설치 및 실행
 
 Kafka는 Docker 컨테이너를 이용하여 실행합니다.
 
-### 4.1. Docker 설치
+### 3.1. Docker 설치
 
 Kafka 실행을 위해 Docker를 설치합니다.  
 자세한 내용은 [Docker 설치 가이드 (Ubuntu)](https://docs.docker.com/engine/install/ubuntu/)를 참고하세요.
 
-### 4.2. Kafka 실행
+### 3.2. Kafka 실행
 
 1. **Kafka 디렉토리로 이동**  
    터미널에서 Kafka 관련 파일이 위치한 디렉토리로 이동합니다.
@@ -333,7 +143,7 @@ Kafka 실행을 위해 Docker를 설치합니다.
    sudo docker ps
    ```
 
-### 4.3. Kafka 관련 Python 스크립트 실행
+### 3.3. Kafka 관련 Python 스크립트 실행
 
 Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인을 테스트할 수 있습니다.
 
@@ -359,7 +169,7 @@ Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인
 
   스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
 
-### 4.4. Elasticsearch와 Kibana 설정
+### 3.4. Elasticsearch와 Kibana 설정
 
 Elasticsearch와 Kibana는 Kafka와 함께 Docker Compose를 통해 실행됩니다.
 
@@ -404,7 +214,7 @@ Elasticsearch와 Kibana는 Kafka와 함께 Docker Compose를 통해 실행됩니
 
 ---
 
-## 5. Airflow로 배치
+## 4. Airflow로 배치
 
 Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한 내용은 [Airflow 공식 문서](https://airflow.apache.org/docs/apache-airflow/stable/start.html)를 참고하세요.
 
