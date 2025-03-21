@@ -6,7 +6,6 @@
 >
 > 1. PostgreSQL 설치 및 설정
 > 2. 필요한 라이브러리 설치
-> 3. Kafka 설치 및 실행
 
 ---
 
@@ -109,64 +108,6 @@
    ```bash
    poetry shell
    ```
-
----
-
-## 3. Kafka 설치 및 실행
-
-Kafka는 Docker 컨테이너를 이용하여 실행합니다.
-
-### 3.1. Docker 설치
-
-Kafka 실행을 위해 Docker를 설치합니다.  
-자세한 내용은 [Docker 설치 가이드 (Ubuntu)](https://docs.docker.com/engine/install/ubuntu/)를 참고하세요.
-
-### 3.2. Kafka 실행
-
-1. **Kafka 디렉토리로 이동**  
-   터미널에서 Kafka 관련 파일이 위치한 디렉토리로 이동합니다.
-
-   ```bash
-   cd kafka-es
-   ```
-
-2. **Docker Compose를 이용해 Kafka 실행**
-
-   ```bash
-   sudo docker compose up -d
-   ```
-
-3. **Docker 컨테이너 상태 확인**
-
-   ```bash
-   sudo docker ps
-   ```
-
-### 3.3. Kafka 관련 Python 스크립트 실행
-
-Kafka와 연동되는 파이썬 스크립트를 통해 데이터 파이프라인을 테스트할 수 있습니다.
-
-- **Consumer 실행**  
-  Kafka로부터 메시지를 소비하는 스크립트를 실행합니다.
-
-  ```bash
-  # Consumer를 위한 screen 생성 및 실행
-  screen -S consumer
-  python consumer/flink_kafka_consumer.py
-  ```
-
-  스크린을 detach하려면 `Ctrl+A+D`를 누르세요.
-
-- **Producer 실행**  
-  RSS 피드 데이터를 Kafka로 전송하는 스크립트를 실행합니다.
-
-  ```bash
-  # Producer를 위한 screen 생성 및 실행
-  screen -S kafka-producer
-  python producer/rss_kafka_producer.py
-  ```
-
-  스크린을 detach하려면 `Ctrl+A+D`를 누르세요
 
 ---
 
