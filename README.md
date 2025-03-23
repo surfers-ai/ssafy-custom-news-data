@@ -8,7 +8,8 @@
 > 2. Hadoop 설치 및 설정
 > 3. 필요한 라이브러리 설치
 > 4. Kafka 설치 및 실행
-> 5. Airflow로 배치
+> 5. ETL 파이프라인 구축
+> 6. Airflow로 배치
 
 ---
 
@@ -404,7 +405,76 @@ Elasticsearch와 Kibana는 Kafka와 함께 Docker Compose를 통해 실행됩니
 
 ---
 
-## 5. Airflow로 배치
+## 5. ETL 파이프라인 구축
+
+### 전체 데이터 흐름도
+
+```
+[Extract]                [Transform]                    [Load]
+원본 데이터  →  HDFS  →  Spark Streaming 처리  →  REST API 엔드포인트
+(JSON)      (임시저장)   (데이터 정제/가공)        (최종 적재)
+                ↓
+            아카이브
+```
+
+### 5.1. Extract (데이터 추출)
+
+#### 추출 프로세스
+
+1. RSS 피드 연동
+   - RSS 피드를 parsing 하여 뉴스 데이터 생성
+   - 뉴스 데이터를 크롤링하여 뉴스 본문 수집
+
+2. Kafka producer 
+   - 생성한 뉴스 데이터를 kafka broker로 전달
+   - 1분에 한번 씩 뉴스 데이터 확인
+
+### 5.2. Transform (데이터 변환)
+
+#### 변환 프로세스
+
+1. **데이터 전처리**
+
+```python
+def preprocess_content(content):
+    # 텍스트 길이 제한 (5000 토큰)
+    # 토큰화 및 디코딩
+```
+
+2. **특성 추출**
+
+   - 키워드 추출 (GPT-4)
+   - 텍스트 임베딩 생성
+   - 카테고리 자동 분류
+
+3. **데이터 정제**
+   - 필드명 변경 (source_site → writer)
+   - 불필요 필드 제거
+   - 누락 데이터 처리
+
+### 5.3. Load (데이터 적재)
+
+#### 적재 프로세스
+1. **하둡 적재**
+```bash
+# 임시(realtime), 최종(news_archive) 디렉토리 생성 및 권한 부여
+hdfs dfs -mkdir -p /user/사용자이름/realtime
+hdfs dfs -mkdir -p /user/사용자이름/news_archive
+
+hdfs dfs -chmod -R 777 /user/사용자이름/realtime
+hdfs dfs -chmod -R 777 /user/사용자이름/news_archive
+```
+2. **데이터베이스 적재**
+   - ES에 DB ID도 같이 저장하기 위해 DB insert 시 ID 리턴 필요
+3. **ES 적재**
+   - news 인덱스 생성 후 db와 동일한 데이터 적재
+   - DB ID가 존재하는 경우에만 적재 (데이터 싱크를 맞추기 위함)
+   - Django Backend에서 검색 API 제공 시 ES 데이터 활용
+4. **적재 상태 모니터링 및 로깅**
+
+---
+
+## 6. Airflow로 배치
 
 Airflow를 사용하여 배치 작업을 설정하는 방법입니다. 자세한 내용은 [Airflow 공식 문서](https://airflow.apache.org/docs/apache-airflow/stable/start.html)를 참고하세요.
 
