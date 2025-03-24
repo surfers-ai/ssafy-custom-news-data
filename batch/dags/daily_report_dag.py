@@ -22,14 +22,24 @@ with DAG(
     tags=['daily', 'report', 'spark']
 ) as dag:
     
-    data_sync_job = BashOperator(
-        task_id='hourly_data_sync',
+    submit_spark_job = BashOperator(
+        task_id='spark_daily_report',
         bash_command=(
-            'echo "airflow 실행"'
+            'echo "Spark 작업 시작" && '
+            'poetry run python /home/jiwoochris/projects/ssafy-custom-news-data/batch/spark_daily_report.py --date {{ ds }} &&'
+            'echo "Spark 작업 완료"'
         )
     )
 
-    data_sync_job
+    notify_report_generated = BashOperator(
+        task_id='notify_report_generated',
+        bash_command=(
+            'echo "리포트가 생성되었습니다: '
+            'report/daily_report_{{ ds_nodash }}.pdf"'
+        )
+    )
+
+    submit_spark_job >> notify_report_generated 
 
 if __name__ == "__main__":
     dag.test()
