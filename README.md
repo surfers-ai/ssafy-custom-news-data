@@ -410,11 +410,15 @@ Elasticsearch와 Kibana는 Kafka와 함께 Docker Compose를 통해 실행됩니
 ### 전체 데이터 흐름도
 
 ```
-[Extract]                [Transform]                    [Load]
-원본 데이터  →  HDFS  →  Spark Streaming 처리  →  REST API 엔드포인트
-(JSON)      (임시저장)   (데이터 정제/가공)        (최종 적재)
-                ↓
-            아카이브
+[Extract]                   [Transform]             [Load]
+Kafka Topic  →  Flink  →  데이터 처리/변환  →  PostgreSQL(DB 저장)
+(JSON 뉴스)    (스트리밍)  (카테고리 분류)   →  Elasticsearch(검색)
+                  │         (키워드 추출)      
+                  │         (벡터 임베딩)
+                  │
+                  ↓            
+                HDFS  →  Spark  →  리포트 생성  →  HDFS 아카이브
+              (임시저장)  (배치)     (pdf)          (장기 보관)
 ```
 
 ### 5.1. Extract (데이터 추출)
@@ -443,7 +447,7 @@ def preprocess_content(content):
 
 2. **특성 추출**
 
-   - 키워드 추출 (GPT-4)
+   - 키워드 추출 (GPT Api)
    - 텍스트 임베딩 생성
    - 카테고리 자동 분류
 
