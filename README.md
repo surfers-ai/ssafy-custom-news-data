@@ -276,6 +276,7 @@ stop-dfs.sh
 
    ```bash
    HDFS_URL=http://localhost:9870
+   HDFS_NAME_NODE_URL=hdfs://localhost:9000
    ```
 
 ---

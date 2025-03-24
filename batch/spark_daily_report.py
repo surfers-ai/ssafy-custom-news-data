@@ -2,6 +2,7 @@ import sys
 import argparse
 import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode, count, from_json, to_timestamp
@@ -11,6 +12,8 @@ import matplotlib.font_manager as fm
 
 # HDFS 클라이언트를 이용해 파일 이동 (pyhdfs, hdfs 라이브러리 등 여러가지 방법이 있으나 여기서는 InsecureClient 사용)
 from hdfs import InsecureClient
+
+load_dotenv()
 
 def main(report_date_str):
     print(f"시작 날짜: {report_date_str}")
@@ -27,8 +30,9 @@ def main(report_date_str):
     end_date = report_date
 
     # HDFS의 /user/news/realtime 디렉터리 내 모든 JSON 파일 읽기
-    # Spark가 HDFS와 연동되어 있다면 경로 앞에 hdfs:// 접두어가 필요할 수 있습니다.
-    hdfs_input_path = "hdfs://localhost:9000/user/news/realtime/*.json"
+    hdfs_name_node = os.getenv('HDFS_NAME_NODE_URL')
+    hdfs_user = os.getenv('HDFS_USER')
+    hdfs_input_path = f"{hdfs_name_node}/user/{hdfs_user}/realtime/*.json"
     df = spark.read.option("multiLine", True).json(hdfs_input_path)
 
     # write_date는 ISO 형식의 문자열로 저장되어 있으므로 timestamp로 변환
@@ -82,8 +86,8 @@ def main(report_date_str):
     # 리포트 발행 이후, 처리한 파일들을 /news_archive 디렉터리로 이동
     try:
         # HDFS 클라이언트 초기화 (환경에 맞게 URL, user 수정)
-        client = InsecureClient('http://localhost:9870', user='hadoop-user')
-        source_dir = "/user/news/realtime"
+        client = InsecureClient(os.getenv('HDFS_URL'), user=os.getenv('HDFS_USER'))
+        source_dir = f"/user/{hdfs_user}/realtime"
         target_dir = "/news_archive"
 
         # source 디렉터리 내 파일 목록 조회
