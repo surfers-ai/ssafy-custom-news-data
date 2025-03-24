@@ -417,11 +417,8 @@ Kafka Topic  →  Flink  →  데이터 처리/변환  →  PostgreSQL(DB 저장
                   │         (벡터 임베딩)
                   │
                   ↓            
-                HDFS  →  Spark  →  리포트 생성
-              (임시저장)  (배치)     (pdf)
-                            ↓
-                         아카이브
-                        (장기 보관)
+                HDFS  →  Spark  →  리포트 생성  →  HDFS 아카이브
+              (임시저장)  (배치)     (pdf)          (장기 보관)
 ```
 
 ### 5.1. Extract (데이터 추출)
